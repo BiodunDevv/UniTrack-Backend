@@ -1,0 +1,119 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Student Sharing Request - UniTrack</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; } body { font-family:
+      'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
+      linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; }
+      .email-wrapper { max-width: 600px; margin: 0 auto; background: #ffffff;
+      border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px
+      rgba(0,0,0,0.12); } .header { background: linear-gradient(135deg, #4f46e5
+      0%, #7c3aed 100%); color: white; padding: 40px 30px; text-align: center; }
+      .header h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 10px; }
+      .header .subtitle { font-size: 1.1rem; font-weight: 300; opacity: 0.9; }
+      .content { padding: 40px 30px; } .greeting { font-size: 1.3rem; color:
+      #374151; margin-bottom: 20px; font-weight: 600; } .message { font-size:
+      1.1rem; color: #4b5563; line-height: 1.6; margin-bottom: 30px; }
+      .request-details { background: #f8fafc; border-radius: 15px; padding:
+      25px; margin: 25px 0; border-left: 5px solid #4f46e5; transition:
+      transform 0.2s ease, box-shadow 0.2s ease; } .request-details:hover {
+      transform: translateY(-3px); box-shadow: 0 12px 25px rgba(79, 70, 229,
+      0.15); } .detail-row { display: flex; justify-content: space-between;
+      margin-bottom: 15px; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
+      .detail-row:last-child { border-bottom: none; margin-bottom: 0; }
+      .detail-label { font-weight: 600; color: #374151; flex: 1; } .detail-value
+      { color: #111827; flex: 2; text-align: right; background:
+      linear-gradient(135deg, #eef2ff, #e0e7ff); padding: 5px 10px;
+      border-radius: 8px; font-weight: 500; } .user-message { background:
+      #fef3c7; border-radius: 10px; padding: 20px; margin: 20px 0; border-left:
+      4px solid #f59e0b; } .user-message h4 { color: #92400e; margin-bottom:
+      10px; } .user-message p { color: #a16207; font-style: italic; }
+      .action-buttons { text-align: center; margin: 30px 0; } .btn { display:
+      inline-block; padding: 15px 30px; margin: 0 10px; text-decoration: none;
+      border-radius: 10px; font-weight: 600; font-size: 1.1rem; transition: all
+      0.3s ease; } .btn-approve { background: linear-gradient(135deg, #10b981
+      0%, #059669 100%); color: white; } .btn-approve:hover { transform:
+      translateY(-2px); box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3); }
+      .btn-review { background: linear-gradient(135deg, #6366f1 0%, #4f46e5
+      100%); color: white; } .btn-review:hover { transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(99, 102, 241, 0.3); } .footer { background:
+      #f9fafb; padding: 30px; text-align: center; color: #4b5563; font-size:
+      0.9rem; } .timestamp { color: #6b7280; font-size: 0.8rem; margin-top:
+      20px; }
+    </style>
+  </head>
+  <body>
+    <div class="email-wrapper">
+      <div class="header">
+        <h1>🎓 UniTrack</h1>
+        <div class="subtitle">Student Sharing Request</div>
+      </div>
+
+      <div class="content">
+        <div class="greeting">
+          Hello
+          {{targetTeacherName}}! 👋
+        </div>
+
+        <div class="message">
+          You have received a student sharing request from
+          <strong>{{requesterName}}</strong>. They would like to add some of
+          your students to their course.
+        </div>
+
+        <div class="request-details">
+          <div class="detail-row">
+            <div class="detail-label">👨‍🏫 Requesting Teacher:</div>
+            <div class="detail-value">{{requesterName}}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">📚 Their Course:</div>
+            <div class="detail-value">{{requesterCourse}}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">📖 Your Course:</div>
+            <div class="detail-value">{{targetCourse}}</div>
+          </div>
+          <div class="detail-row">
+            <div class="detail-label">👥 Number of Students:</div>
+            <div class="detail-value">{{studentCount}}
+              student{{#if_gt studentCount 1}}s{{/if_gt}}</div>
+          </div>
+        </div>
+
+        {{#if message}}
+          <div class="user-message">
+            <h4>💬 Message from {{requesterName}}:</h4>
+            <p>"{{message}}"</p>
+          </div>
+        {{/if}}
+
+        <div class="action-buttons">
+          <a href="{{approveUrl}}" class="btn btn-review">
+            📋 Review Request
+          </a>
+        </div>
+
+        <div class="message">
+          Please log into your UniTrack account to review the student details
+          and respond to this request. You can approve or decline this request
+          with an optional message.
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>This is an automated message from UniTrack Attendance System.</p>
+        <p>If you did not expect this email, please contact your system
+          administrator.</p>
+        <div class="timestamp">
+          Request ID:
+          {{requestId}}
+          |
+          {{timestamp}}
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

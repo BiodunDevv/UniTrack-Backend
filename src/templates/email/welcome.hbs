@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to UniTrack - {{teacherName}}</title>
+  <style>
+    body {
+      font-family: Roboto, Arial, sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
+    }
+    .email-wrapper {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .header {
+      text-align: center;
+      padding: 24px 16px;
+      background: #1a73e8;
+      color: #fff;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 500;
+      margin: 8px 0;
+    }
+    .subtitle {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .content {
+      padding: 20px 16px;
+      font-size: 14px;
+      color: #202124;
+    }
+    .greeting {
+      font-size: 16px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: #1a73e8;
+    }
+    .credentials-container {
+      background: #e8f0fe;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      padding: 12px;
+      margin: 16px 0;
+    }
+    .credentials-title {
+      font-size: 15px;
+      font-weight: 500;
+      color: #1967d2;
+      margin-bottom: 8px;
+    }
+    .credential-item {
+      margin: 6px 0;
+      font-size: 14px;
+    }
+    .credential-label {
+      font-weight: 500;
+      margin-right: 6px;
+      color: #202124;
+    }
+    .credential-value {
+      font-family: monospace;
+      background: #f1f3f4;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .steps {
+      margin: 20px 0;
+    }
+    .steps-title {
+      font-size: 15px;
+      font-weight: 500;
+      color: #188038;
+      margin-bottom: 8px;
+    }
+    .step {
+      margin: 10px 0;
+      font-size: 14px;
+      padding-left: 4px;
+    }
+    .cta {
+      text-align: center;
+      padding: 20px;
+      background: #fef7e0;
+      border-top: 1px solid #f1f3f4;
+    }
+    .cta-title {
+      font-size: 15px;
+      font-weight: 500;
+      color: #b06000;
+      margin-bottom: 8px;
+    }
+    .cta-button {
+      background: #1a73e8;
+      color: #fff;
+      padding: 10px 20px;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 14px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-top: 10px;
+    }
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 12px;
+      color: #5f6368;
+      border-top: 1px solid #e0e0e0;
+      background: #fafafa;
+    }
+
+    /* Dark mode */
+    @media (prefers-color-scheme: dark) {
+      body { background: #202124; }
+      .email-wrapper { background: #2d2f31; border: 1px solid #3c4043; }
+      .header { background: #1a73e8; color: #fff; }
+      .content { color: #e8eaed; }
+      .greeting { color: #8ab4f8; }
+      .credentials-container { background: #303134; border: 1px solid #3c4043; }
+      .credentials-title { color: #8ab4f8; }
+      .credential-label { color: #e8eaed; }
+      .credential-value { background: #3c4043; color: #e8eaed; }
+      .steps-title { color: #81c995; }
+      .step { color: #e8eaed; }
+      .cta { background: #3c4043; }
+      .cta-title { color: #fdd663; }
+      .cta-button { background: #8ab4f8; color: #202124; }
+      .footer { background: #2d2f31; color: #9aa0a6; border-top: 1px solid #3c4043; }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="header">
+      <div style="font-size:32px;">🎓</div>
+      <h1>UniTrack</h1>
+      <div class="subtitle">Smart Attendance Management</div>
+    </div>
+    <div class="content">
+      <div class="greeting">Hello {{teacherName}}, 👋</div>
+      <p>Welcome to UniTrack! Your account is ready.</p>
+      <div class="credentials-container">
+        <div class="credentials-title">Your Account Credentials</div>
+        <div class="credential-item"><span class="credential-label">Email:</span><span class="credential-value">{{teacherEmail}}</span></div>
+        <div class="credential-item"><span class="credential-label">Password:</span><span class="credential-value">{{temporaryPassword}}</span></div>
+      </div>
+      <div class="steps">
+        <div class="steps-title">Quick Start Steps</div>
+        <div class="step">1. Log in with your credentials</div>
+        <div class="step">2. Create your courses</div>
+        <div class="step">3. Start attendance sessions</div>
+        <div class="step">4. Monitor and generate reports</div>
+      </div>
+    </div>
+    <div class="cta">
+      <div class="cta-title">Ready to begin?</div>
+      <a href="{{loginUrl}}" class="cta-button">Access Dashboard</a>
+    </div>
+    <div class="footer">
+      UniTrack Support Team • Need help? Contact us anytime
+    </div>
+  </div>
+</body>
+</html>
