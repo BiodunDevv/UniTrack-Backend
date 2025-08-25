@@ -185,7 +185,9 @@ router.post(
       // If not found in Teachers, try Admins
       if (!user) {
         user = await Admin.findOne({ email });
-        userType = "admin";
+        if (user) {
+          userType = "admin";
+        }
       }
 
       if (!user) {

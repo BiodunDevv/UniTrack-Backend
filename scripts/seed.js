@@ -3,6 +3,7 @@ require("dotenv").config();
 
 // Import models
 const Teacher = require("../src/models/Teacher");
+const Admin = require("../src/models/Admin");
 const Course = require("../src/models/Course");
 const Student = require("../src/models/Student");
 const CourseStudent = require("../src/models/CourseStudent");
@@ -29,6 +30,7 @@ const seedDatabase = async () => {
     console.log("🧹 Cleaning existing data...");
     await Promise.all([
       Teacher.deleteMany({}),
+      Admin.deleteMany({}),
       Course.deleteMany({}),
       Student.deleteMany({}),
       CourseStudent.deleteMany({}),
@@ -37,9 +39,9 @@ const seedDatabase = async () => {
 
     console.log("👑 Creating Administrator Account...");
     // Create admin user
-    const adminExists = await Teacher.findOne({ role: "admin" });
+    const adminExists = await Admin.findOne({ email: "louisdiaz43@gmail.com" });
     if (!adminExists) {
-      const admin = new Teacher({
+      const admin = new Admin({
         name: "Biodun Administrator",
         email: "louisdiaz43@gmail.com",
         password_hash: "balikiss12", // Will be hashed by the pre-save middleware
