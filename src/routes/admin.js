@@ -741,10 +741,11 @@ router.get(
         .populate("student_id", "name email matric_no phone")
         .sort({ submitted_at: -1 });
 
-      // Generate CSV
-      const csvBuffer = await ReportGenerator.generateAdminAttendanceCSV(
-        attendanceData
-      );
+      // Generate enhanced CSV with session grouping
+      const csvBuffer =
+        await ReportGenerator.generateEnhancedAdminAttendanceCSV(
+          attendanceData
+        );
 
       if (email === "true") {
         // Send via email

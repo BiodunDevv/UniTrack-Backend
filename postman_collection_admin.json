@@ -1,0 +1,588 @@
+{
+  "info": {
+    "name": "InClass - Admin Only",
+    "description": "Admin-specific endpoints for InClass Attendance System - System administration, teacher management, comprehensive reports, and system monitoring",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{adminAuthToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "adminAuthToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "teacherId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "courseId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Admin Authentication",
+      "item": [
+        {
+          "name": "1. Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('adminAuthToken', response.token);",
+                  "    pm.test('Admin login successful', function () {",
+                  "        pm.expect(response.userType).to.eql('admin');",
+                  "        pm.expect(response.token).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@university.edu\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 System Statistics & Monitoring",
+      "item": [
+        {
+          "name": "1. Get System Statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "stats"]
+            }
+          }
+        },
+        {
+          "name": "2. System Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "health"]
+            }
+          }
+        },
+        {
+          "name": "3. Get Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "audit-logs"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "action",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "teacher_id",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👨‍🏫 Teacher Management",
+      "item": [
+        {
+          "name": "1. Get All Teachers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/teachers?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "teachers"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Create Teacher Account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('teacherId', response.teacher._id);",
+                  "    pm.test('Teacher created successfully', function () {",
+                  "        pm.expect(response.teacher._id).to.be.a('string');",
+                  "        pm.expect(response.temporary_password).to.be.a('string');",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Dr. New Teacher\",\n  \"email\": \"newteacher@university.edu\",\n  \"role\": \"teacher\",\n  \"sendWelcomeEmail\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/teachers",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "teachers"]
+            }
+          }
+        },
+        {
+          "name": "3. Update Teacher",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Dr. Updated Teacher\",\n  \"active\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/teachers/{{teacherId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "teachers", "{{teacherId}}"]
+            }
+          }
+        },
+        {
+          "name": "4. Delete Teacher",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/teachers/{{teacherId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "teachers", "{{teacherId}}"]
+            }
+          }
+        },
+        {
+          "name": "5. Bulk Teacher Actions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"activate\",\n  \"teacher_ids\": [\"teacher_id_1\", \"teacher_id_2\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/teachers/bulk-action",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "teachers", "bulk-action"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📈 System-wide Attendance Analytics",
+      "item": [
+        {
+          "name": "1. Get All Attendance Records",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "teacher_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "course_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "session_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "student_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Filter by Teacher",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance?teacher_id={{teacherId}}&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance"],
+              "query": [
+                {
+                  "key": "teacher_id",
+                  "value": "{{teacherId}}"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Filter by Date Range",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance?start_date=2025-01-01&end_date=2025-12-31&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance"],
+              "query": [
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-12-31"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "4. Filter by Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance?status=present&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "present"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📄 System-wide Reports",
+      "item": [
+        {
+          "name": "1. Download System CSV Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance/report.csv",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance", "report.csv"],
+              "query": [
+                {
+                  "key": "teacher_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "course_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Email System CSV Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance/report.csv?email=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance", "report.csv"],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Download System PDF Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance/report.pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance", "report.pdf"],
+              "query": [
+                {
+                  "key": "teacher_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "course_id",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "start_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "end_date",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "4. Email System PDF Report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance/report.pdf?email=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance", "report.pdf"],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "true"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Filtered CSV Report (By Teacher)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance/report.csv?teacher_id={{teacherId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance", "report.csv"],
+              "query": [
+                {
+                  "key": "teacher_id",
+                  "value": "{{teacherId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "6. Filtered PDF Report (Date Range)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/attendance/report.pdf?start_date=2025-01-01&end_date=2025-12-31",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "attendance", "report.pdf"],
+              "query": [
+                {
+                  "key": "start_date",
+                  "value": "2025-01-01"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2025-12-31"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

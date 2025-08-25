@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const { body } = require("express-validator");
 const Teacher = require("../models/Teacher");
+const Admin = require("../models/Admin");
 const EmailOtp = require("../models/EmailOtp");
 const EmailService = require("../services/emailService");
 const {
@@ -160,7 +161,7 @@ router.post(
   }
 );
 
-// Teacher login
+// Login (supports both teachers and admins)
 router.post(
   "/login",
   strictLimiter,
@@ -172,38 +173,47 @@ router.post(
     body("password").notEmpty().withMessage("Password required"),
   ],
   validate,
-  auditLogger("teacher_login"),
+  auditLogger("user_login"),
   async (req, res) => {
     try {
       const { email, password } = req.body;
 
-      // Find teacher
-      const teacher = await Teacher.findOne({ email });
-      if (!teacher) {
+      // Try to find in Teachers first
+      let user = await Teacher.findOne({ email });
+      let userType = "teacher";
+
+      // If not found in Teachers, try Admins
+      if (!user) {
+        user = await Admin.findOne({ email });
+        userType = "admin";
+      }
+
+      if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
       // Check password
-      const isPasswordValid = await teacher.comparePassword(password);
+      const isPasswordValid = await user.comparePassword(password);
       if (!isPasswordValid) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
       // Generate JWT token
       const token = jwt.sign(
-        { id: teacher._id, email: teacher.email, role: teacher.role },
+        { id: user._id, email: user.email, role: user.role, userType },
         process.env.JWT_SECRET,
         { expiresIn: "24h" }
       );
 
       // Update last login
-      teacher.last_login = new Date();
-      await teacher.save();
+      user.last_login = new Date();
+      await user.save();
 
       res.json({
         message: "Login successful",
         token,
-        teacher: teacher.toJSON(),
+        user: user.toJSON(),
+        userType,
       });
     } catch (error) {
       console.error("Login error:", error);

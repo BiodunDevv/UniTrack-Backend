@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const Teacher = require("../models/Teacher");
+const Admin = require("../models/Admin");
 
 const auth = async (req, res, next) => {
   try {
@@ -12,13 +13,23 @@ const auth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const teacher = await Teacher.findById(decoded.id);
 
-    if (!teacher) {
+    // Get user based on userType in token
+    let user;
+    if (decoded.userType === "admin") {
+      user = await Admin.findById(decoded.id);
+      req.admin = user;
+    } else {
+      user = await Teacher.findById(decoded.id);
+      req.teacher = user;
+    }
+
+    if (!user) {
       return res.status(401).json({ error: "Invalid token." });
     }
 
-    req.teacher = teacher;
+    req.user = user; // Generic user object
+    req.userType = decoded.userType;
     next();
   } catch (error) {
     res.status(401).json({ error: "Invalid token." });
@@ -27,7 +38,7 @@ const auth = async (req, res, next) => {
 
 const adminAuth = async (req, res, next) => {
   auth(req, res, () => {
-    if (req.teacher.role !== "admin") {
+    if (req.userType !== "admin" && req.user?.role !== "admin") {
       return res
         .status(403)
         .json({ error: "Access denied. Admin role required." });
@@ -36,4 +47,15 @@ const adminAuth = async (req, res, next) => {
   });
 };
 
-module.exports = { auth, adminAuth };
+const teacherAuth = async (req, res, next) => {
+  auth(req, res, () => {
+    if (req.userType !== "teacher") {
+      return res
+        .status(403)
+        .json({ error: "Access denied. Teacher role required." });
+    }
+    next();
+  });
+};
+
+module.exports = { auth, adminAuth, teacherAuth };

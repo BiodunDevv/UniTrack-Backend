@@ -99,7 +99,7 @@ class EmailService {
   async sendAttendanceReport(
     teacherEmail,
     teacherName,
-    courseTitle,
+    courseName,
     reportBuffer,
     format = "csv"
   ) {
@@ -107,7 +107,8 @@ class EmailService {
       const template = await this.loadTemplate("attendance-report");
       const html = template({
         teacherName,
-        courseTitle,
+        courseName,
+        courseTitle: courseName, // For backward compatibility
         format: format.toUpperCase(),
         timestamp: new Date().toLocaleString(),
       });
@@ -115,7 +116,7 @@ class EmailService {
       const mailOptions = {
         from: process.env.EMAIL_FROM,
         to: teacherEmail,
-        subject: `Attendance Report - ${courseTitle}`,
+        subject: `Attendance Report - ${courseName}`,
         html,
         attachments: [
           {

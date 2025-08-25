@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const Teacher = require("../src/models/Teacher");
+const Admin = require("../src/models/Admin");
 const { generateRandomPassword } = require("../src/utils/helpers");
 require("dotenv").config();
 
@@ -17,18 +17,19 @@ const createAdmin = async () => {
     const password = process.argv[4] || generateRandomPassword();
 
     // Check if admin already exists
-    const existingAdmin = await Teacher.findOne({ email });
+    const existingAdmin = await Admin.findOne({ email });
     if (existingAdmin) {
       console.log("❌ Admin with this email already exists");
       process.exit(1);
     }
 
     // Create admin user
-    const admin = new Teacher({
+    const admin = new Admin({
       name,
       email,
       password_hash: password, // Will be hashed by pre-save middleware
       role: "admin",
+      is_super_admin: true,
     });
 
     await admin.save();
