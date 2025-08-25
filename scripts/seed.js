@@ -93,6 +93,7 @@ const seedDatabase = async () => {
         email: "muhammedabiodun42@gmail.com",
         password_hash: "balikiss12", // Will be hashed by the pre-save middleware
         role: "teacher",
+        email_verified: true, // Mark as verified for seed data
       });
       await teacher.save();
 

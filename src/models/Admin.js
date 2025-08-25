@@ -50,6 +50,29 @@ const adminSchema = new mongoose.Schema(
       enum: ["active", "inactive", "suspended"],
       default: "active",
     },
+    email_verified: {
+      type: Boolean,
+      default: true, // Admins are auto-verified
+    },
+    otp: {
+      type: String,
+      default: null,
+    },
+    otp_expires_at: {
+      type: Date,
+      default: null,
+    },
+    otp_purpose: {
+      type: String,
+      enum: [
+        "registration",
+        "email_verification",
+        "password_reset",
+        "login",
+        null,
+      ],
+      default: null,
+    },
   },
   {
     timestamps: true,

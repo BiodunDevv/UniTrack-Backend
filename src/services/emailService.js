@@ -43,10 +43,18 @@ class EmailService {
   async sendOTP(email, otp, purpose = "verification") {
     try {
       const template = await this.loadTemplate("otp");
+      const expiryTime = new Date(
+        Date.now() + 60 * 60 * 1000
+      ).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
       const html = template({
         otp,
         purpose,
-        expiryMinutes: process.env.OTP_EXPIRY_MINUTES || 10,
+        expiryMinutes: 60, // Always 1 hour expiry
+        expiryTime: expiryTime,
       });
 
       const mailOptions = {
