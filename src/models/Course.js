@@ -18,6 +18,19 @@ const courseSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    level: {
+      type: Number,
+      required: true,
+      min: 100,
+      max: 600,
+      validate: {
+        validator: function (v) {
+          return v >= 100 && v <= 600 && v % 100 === 0;
+        },
+        message:
+          "Level must be between 100 and 600 in increments of 100 (100, 200, 300, 400, 500, 600)",
+      },
+    },
     created_at: {
       type: Date,
       default: Date.now,
@@ -28,7 +41,7 @@ const courseSchema = new mongoose.Schema(
   }
 );
 
-// Compound index for teacher and course code uniqueness
-courseSchema.index({ teacher_id: 1, course_code: 1 }, { unique: true });
+// Remove unique constraint on course code to allow multiple teachers to use same code
+courseSchema.index({ teacher_id: 1, course_code: 1, level: 1 });
 
 module.exports = mongoose.model("Course", courseSchema);

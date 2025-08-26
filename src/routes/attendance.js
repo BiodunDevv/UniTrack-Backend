@@ -50,6 +50,18 @@ router.post(
       .optional()
       .isObject()
       .withMessage("Device info must be an object"),
+    body("level")
+      .optional()
+      .isInt({ min: 100, max: 600 })
+      .custom((value) => {
+        if (value && value % 100 !== 0) {
+          throw new Error(
+            "Level must be in increments of 100 (100, 200, 300, 400, 500, 600)"
+          );
+        }
+        return true;
+      })
+      .withMessage("Level must be between 100 and 600 in increments of 100"),
   ],
   validate,
   async (req, res) => {
@@ -61,6 +73,7 @@ router.post(
         lng,
         accuracy = 0,
         device_info = {},
+        level,
       } = req.body;
       const userAgent = req.get("User-Agent") || "";
       const ip = req.ip;
@@ -88,6 +101,12 @@ router.post(
           error:
             "Student not found. Please contact your teacher to be added to the course.",
         });
+      }
+
+      // Update student level if provided and different
+      if (level && student.level !== level) {
+        student.level = level;
+        await student.save();
       }
 
       // Check if student is enrolled in the course

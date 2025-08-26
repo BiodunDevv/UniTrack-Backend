@@ -129,69 +129,117 @@ const seedDatabase = async () => {
         console.log("└─────────────────────────────────────────────────────┘");
       }
 
-      console.log("\n📚 Creating Sample Course...");
-      // Create sample course
-      const course = new Course({
-        teacher_id: teacher._id,
-        course_code: "CS101",
-        title: "Introduction to Computer Science",
+      console.log("\n📚 Creating Sample Courses...");
+      // Create sample courses with different levels
+      const courses = [
+        {
+          teacher_id: teacher._id,
+          course_code: "CS101",
+          title: "Introduction to Computer Science",
+          level: 100,
+        },
+        {
+          teacher_id: teacher._id,
+          course_code: "CS201",
+          title: "Data Structures and Algorithms",
+          level: 200,
+        },
+        {
+          teacher_id: teacher._id,
+          course_code: "CS301",
+          title: "Software Engineering",
+          level: 300,
+        },
+      ];
+
+      const createdCourses = await Course.insertMany(courses);
+      console.log(`✅ Created ${createdCourses.length} sample courses:`);
+      createdCourses.forEach((course, index) => {
+        console.log(
+          `   ${index + 1}. ${course.course_code} - ${course.title} (Level ${
+            course.level
+          })`
+        );
       });
-      await course.save();
-      console.log(
-        "✅ Sample course created: CS101 - Introduction to Computer Science"
-      );
 
       console.log("\n👥 Creating Student Records...");
-      // Create sample students
+      // Create sample students with different levels
       const students = [
         {
           matric_no: "CSC/2021/001",
           name: "Alice Johnson",
           email: "alice@student.edu",
           phone: "1234567890",
+          level: 100,
         },
         {
           matric_no: "CSC/2021/002",
           name: "Bob Williams",
           email: "bob@student.edu",
           phone: "1234567891",
+          level: 100,
         },
         {
-          matric_no: "CSC/2021/003",
+          matric_no: "CSC/2020/001",
           name: "Charlie Brown",
           email: "charlie@student.edu",
           phone: "1234567892",
+          level: 200,
         },
         {
-          matric_no: "CSC/2021/004",
+          matric_no: "CSC/2020/002",
           name: "Diana Davis",
           email: "diana@student.edu",
           phone: "1234567893",
+          level: 200,
         },
         {
-          matric_no: "CSC/2021/005",
+          matric_no: "CSC/2019/001",
           name: "Edward Miller",
           email: "edward@student.edu",
           phone: "1234567894",
+          level: 300,
+        },
+        {
+          matric_no: "CSC/2019/002",
+          name: "Fiona Wilson",
+          email: "fiona@student.edu",
+          phone: "1234567895",
+          level: 300,
         },
       ];
 
       const createdStudents = await Student.insertMany(students);
       console.log(`✅ Created ${createdStudents.length} sample students:`);
       createdStudents.forEach((student, index) => {
-        console.log(`   ${index + 1}. ${student.name} (${student.matric_no})`);
+        console.log(
+          `   ${index + 1}. ${student.name} (${student.matric_no}) - Level ${
+            student.level
+          }`
+        );
       });
 
-      console.log("\n🎓 Enrolling Students in Course...");
-      // Enroll students in course
-      const enrollments = createdStudents.map((student) => ({
-        course_id: course._id,
-        student_id: student._id,
-        added_by: teacher._id,
-      }));
+      console.log("\n🎓 Enrolling Students in Courses...");
+      // Enroll students in appropriate courses based on their levels
+      const enrollments = [];
+
+      createdStudents.forEach((student) => {
+        createdCourses.forEach((course) => {
+          // Enroll students in courses at or below their level
+          if (course.level <= student.level) {
+            enrollments.push({
+              course_id: course._id,
+              student_id: student._id,
+              added_by: teacher._id,
+            });
+          }
+        });
+      });
 
       await CourseStudent.insertMany(enrollments);
-      console.log("✅ All students enrolled in CS101 successfully");
+      console.log(
+        `✅ Created ${enrollments.length} course enrollments successfully`
+      );
     } else {
       console.log("✅ Sample teacher account already exists\n");
     }

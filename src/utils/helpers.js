@@ -25,7 +25,6 @@ const generateDeviceFingerprint = (userAgent, additionalData = {}) => {
   const data = JSON.stringify({
     userAgent,
     ...additionalData,
-    timestamp: Date.now(),
   });
   return crypto.createHash("sha256").update(data).digest("hex");
 };
@@ -102,11 +101,10 @@ const isValidEmail = (email) => {
   return emailRegex.test(email);
 };
 
-// Validate matriculation number format (customize based on your institution)
+// Validate matriculation number format (accepts any format, just checks it's not empty)
 const isValidMatricNo = (matricNo) => {
-  // Example: ABC/2021/12345 format
-  const matricRegex = /^[A-Z]{2,4}\/\d{4}\/\d{4,6}$/i;
-  return matricRegex.test(matricNo);
+  // Accept any non-empty string format - will be converted to uppercase on backend
+  return typeof matricNo === "string" && matricNo.trim().length > 0;
 };
 
 module.exports = {

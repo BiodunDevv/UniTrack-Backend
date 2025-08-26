@@ -1,0 +1,658 @@
+{
+  "info": {
+    "name": "UniTrack Attendance System - Enhanced",
+    "description": "Comprehensive API collection for testing UniTrack Attendance System with enhanced features including levels, bulk operations, and student copying.\n\n## 🔐 Authentication Flow\n\n### New User Registration:\n1. **Register Teacher** - Creates account with OTP\n2. **Verify Registration** - Complete registration with OTP\n3. **Login** - Access the system\n\n### Enhanced Features:\n- ✅ Course levels (100-600)\n- ✅ Student levels\n- ✅ Bulk student addition\n- ✅ Copy students between courses\n- ✅ Multiple teachers can use same course codes\n- ✅ Level validation in attendance submission\n\n### Features:\n- ✅ Email verification required for teachers\n- ✅ Admins are auto-verified\n- ✅ OTPs expire after 1 hour\n- ✅ Welcome emails after verification\n- ✅ Enhanced email templates with expiry times\n- ✅ OTPs stored in user models (not separate collection)",
+    "version": "3.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "registrationToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verificationToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "courseId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sourceCourseId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "studentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionCode",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Authentication",
+      "item": [
+        {
+          "name": "1. Register Teacher",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    if (responseJson.registrationToken) {",
+                  "        pm.environment.set('registrationToken', responseJson.registrationToken);",
+                  "        console.log('Registration token saved:', responseJson.registrationToken);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@test.com\",\n  \"password\": \"password123\",\n  \"role\": \"teacher\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register_teacher",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register_teacher"]
+            }
+          }
+        },
+        {
+          "name": "2. Login Teacher (Verified)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 200) {",
+                  "    const responseJson = pm.response.json();",
+                  "    if (responseJson.token) {",
+                  "        pm.environment.set('authToken', responseJson.token);",
+                  "        console.log('Auth token saved:', responseJson.token);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"muhammedabiodun42@gmail.com\",\n  \"password\": \"balikiss12\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🎓 Enhanced Course Management",
+      "item": [
+        {
+          "name": "1. Create Course with Level",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    if (responseJson.course && responseJson.course._id) {",
+                  "        pm.environment.set('courseId', responseJson.course._id);",
+                  "        console.log('Course ID saved:', responseJson.course._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course_code\": \"CS 102\",\n  \"title\": \"Data Structures and Algorithms\",\n  \"level\": 200\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses"]
+            }
+          }
+        },
+        {
+          "name": "2. Create Another Course (Same Code, Different Teacher)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course_code\": \"CS 102\",\n  \"title\": \"Advanced Data Structures\",\n  \"level\": 300\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses"]
+            }
+          }
+        },
+        {
+          "name": "3. Get All Courses (with filters)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/courses?page=1&limit=10&level=200&search=data",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "level",
+                  "value": "200"
+                },
+                {
+                  "key": "search",
+                  "value": "data"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "4. Update Course with Level",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Advanced Data Structures and Algorithms\",\n  \"level\": 300\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{courseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses", "{{courseId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "👥 Enhanced Student Management",
+      "item": [
+        {
+          "name": "1. Add Single Student with Level",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    if (responseJson.enrollment && responseJson.enrollment.student_id && responseJson.enrollment.student_id._id) {",
+                  "        pm.environment.set('studentId', responseJson.enrollment.student_id._id);",
+                  "        console.log('Student ID saved:', responseJson.enrollment.student_id._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matric_no\": \"CSC/2024/001\",\n  \"name\": \"Test Student\",\n  \"email\": \"test.student@email.com\",\n  \"phone\": \"1234567890\",\n  \"level\": 200\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{courseId}}/students",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses", "{{courseId}}", "students"]
+            }
+          }
+        },
+        {
+          "name": "2. Bulk Add Students",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"students\": [\n    {\n      \"course_code\": \"CS 102\",\n      \"matric_no\": \"CSC/2024/002\",\n      \"name\": \"Alice Johnson\",\n      \"email\": \"alice.johnson@email.com\",\n      \"phone\": \"1234567891\",\n      \"level\": 200\n    },\n    {\n      \"course_code\": \"CS 102\",\n      \"matric_no\": \"CSC/2024/003\",\n      \"name\": \"Bob Smith\",\n      \"email\": \"bob.smith@email.com\",\n      \"phone\": \"1234567892\",\n      \"level\": 200\n    },\n    {\n      \"course_code\": \"CS 102\",\n      \"matric_no\": \"CSC/2024/004\",\n      \"name\": \"Carol Williams\",\n      \"email\": \"carol.williams@email.com\",\n      \"phone\": \"1234567893\",\n      \"level\": 200\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{courseId}}/students/bulk",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses", "{{courseId}}", "students", "bulk"]
+            }
+          }
+        },
+        {
+          "name": "3. Create Second Course for Copying",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    if (responseJson.course && responseJson.course._id) {",
+                  "        pm.environment.set('sourceCourseId', responseJson.course._id);",
+                  "        console.log('Source Course ID saved:', responseJson.course._id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course_code\": \"CS 201\",\n  \"title\": \"Database Systems\",\n  \"level\": 200\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses"]
+            }
+          }
+        },
+        {
+          "name": "4. Copy All Students from Source Course",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{sourceCourseId}}/copy-students/{{courseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "courses",
+                "{{sourceCourseId}}",
+                "copy-students",
+                "{{courseId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "5. Copy Specific Students",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_ids\": [\"{{studentId}}\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{sourceCourseId}}/copy-students/{{courseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "courses",
+                "{{sourceCourseId}}",
+                "copy-students",
+                "{{courseId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📍 Session Management",
+      "item": [
+        {
+          "name": "1. Start Attendance Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.status === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    if (responseJson.session) {",
+                  "        pm.environment.set('sessionId', responseJson.session._id);",
+                  "        pm.environment.set('sessionCode', responseJson.session.session_code);",
+                  "        console.log('Session ID saved:', responseJson.session._id);",
+                  "        console.log('Session Code saved:', responseJson.session.session_code);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 6.5244,\n  \"lng\": 3.3792,\n  \"radius_m\": 100,\n  \"duration_minutes\": 60\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{courseId}}/sessions",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses", "{{courseId}}", "sessions"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "✅ Enhanced Attendance Submission",
+      "item": [
+        {
+          "name": "1. Submit Attendance with Level",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matric_no\": \"CSC/2024/001\",\n  \"session_code\": \"{{sessionCode}}\",\n  \"lat\": 6.5244,\n  \"lng\": 3.3792,\n  \"accuracy\": 10,\n  \"level\": 200,\n  \"device_info\": {\n    \"platform\": \"Web\",\n    \"browser\": \"Chrome\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/attendance/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["attendance", "submit"]
+            }
+          }
+        },
+        {
+          "name": "2. Submit Attendance (Level Update)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matric_no\": \"CSC/2024/002\",\n  \"session_code\": \"{{sessionCode}}\",\n  \"lat\": 6.5244,\n  \"lng\": 3.3792,\n  \"accuracy\": 10,\n  \"level\": 300,\n  \"device_info\": {\n    \"platform\": \"Mobile\",\n    \"browser\": \"Safari\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/attendance/submit",
+              "host": ["{{baseUrl}}"],
+              "path": ["attendance", "submit"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔧 Testing & Validation",
+      "item": [
+        {
+          "name": "1. Test Invalid Level (Course)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course_code\": \"CS 999\",\n  \"title\": \"Invalid Level Course\",\n  \"level\": 150\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses"]
+            }
+          }
+        },
+        {
+          "name": "2. Test Invalid Level (Student)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matric_no\": \"CSC/2024/999\",\n  \"name\": \"Invalid Level Student\",\n  \"email\": \"invalid@email.com\",\n  \"phone\": \"1234567890\",\n  \"level\": 250\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{courseId}}/students",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses", "{{courseId}}", "students"]
+            }
+          }
+        },
+        {
+          "name": "3. Test Bulk with Mixed Validation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"students\": [\n    {\n      \"course_code\": \"CS 102\",\n      \"matric_no\": \"CSC/2024/005\",\n      \"name\": \"Valid Student\",\n      \"email\": \"valid@email.com\",\n      \"phone\": \"1234567890\",\n      \"level\": 300\n    },\n    {\n      \"course_code\": \"WRONG CODE\",\n      \"matric_no\": \"CSC/2024/006\",\n      \"name\": \"Wrong Course Code\",\n      \"email\": \"wrong@email.com\",\n      \"phone\": \"1234567891\",\n      \"level\": 200\n    },\n    {\n      \"course_code\": \"CS 102\",\n      \"matric_no\": \"CSC/2024/007\",\n      \"name\": \"Invalid Level\",\n      \"email\": \"invalid.level@email.com\",\n      \"phone\": \"1234567892\",\n      \"level\": 250\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/courses/{{courseId}}/students/bulk",
+              "host": ["{{baseUrl}}"],
+              "path": ["courses", "{{courseId}}", "students", "bulk"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Pre-request script for common setup",
+          "pm.request.headers.add({key: 'User-Agent', value: 'Postman/unitrack-Enhanced-API-Test'});"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script",
+          "pm.test('Response time is less than 5000ms', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "});",
+          "",
+          "pm.test('Response has valid JSON', function () {",
+          "    pm.response.to.be.json;",
+          "});"
+        ]
+      }
+    }
+  ]
+}
