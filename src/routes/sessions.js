@@ -209,7 +209,7 @@ router.get(
 
 // Get specific session details
 router.get(
-  "/sessions/:sessionId",
+  "/:sessionId",
   auth,
   [param("sessionId").isMongoId().withMessage("Valid session ID required")],
   validate,
@@ -217,10 +217,15 @@ router.get(
     try {
       const { sessionId } = req.params;
 
-      const session = await Session.findOne({
-        _id: sessionId,
-        teacher_id: req.teacher._id,
-      })
+      // Build query based on user type
+      let query = { _id: sessionId };
+      
+      // If teacher, only show their sessions. If admin, show all sessions
+      if (req.teacher) {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const session = await Session.findOne(query)
         .populate("course_id", "course_code title")
         .populate("teacher_id", "name email");
 
@@ -272,7 +277,7 @@ router.get(
 
 // End session early
 router.patch(
-  "/sessions/:sessionId/end",
+  "/:sessionId/end",
   auth,
   [param("sessionId").isMongoId().withMessage("Valid session ID required")],
   validate,
@@ -312,7 +317,7 @@ router.patch(
 
 // Get real-time attendance for a session (for live monitoring)
 router.get(
-  "/sessions/:sessionId/live",
+  "/:sessionId/live",
   auth,
   [param("sessionId").isMongoId().withMessage("Valid session ID required")],
   validate,
@@ -320,10 +325,15 @@ router.get(
     try {
       const { sessionId } = req.params;
 
-      const session = await Session.findOne({
-        _id: sessionId,
-        teacher_id: req.teacher._id,
-      });
+      // Build query based on user type
+      let query = { _id: sessionId };
+      
+      // If teacher, only show their sessions. If admin, show all sessions
+      if (req.teacher) {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const session = await Session.findOne(query);
 
       if (!session) {
         return res.status(404).json({ error: "Session not found" });

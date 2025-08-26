@@ -1,6 +1,9 @@
 const express = require("express");
 const { body, param } = require("express-validator");
 const Course = require("../models/Course");
+const Session = require("../models/Session");
+const CourseStudent = require("../models/CourseStudent");
+const Attendance = require("../models/Attendance");
 const { auth } = require("../middleware/auth");
 const validate = require("../middleware/validation");
 const auditLogger = require("../middleware/auditLogger");
@@ -92,7 +95,7 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// Get specific course
+// Get specific course with comprehensive details
 router.get(
   "/:id",
   auth,
@@ -100,16 +103,145 @@ router.get(
   validate,
   async (req, res) => {
     try {
-      const course = await Course.findOne({
-        _id: req.params.id,
-        teacher_id: req.teacher._id,
-      }).populate("teacher_id", "name email");
+      // Build query based on user type
+      let query = { _id: req.params.id };
+      
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher) {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query)
+        .populate("teacher_id", "name email");
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
       }
 
-      res.json({ course });
+      // Get enrolled students
+      const courseStudents = await CourseStudent.find({ course_id: course._id })
+        .populate("student_id", "matric_no name email")
+        .sort({ enrolled_at: -1 });
+
+      const students = courseStudents.map(cs => ({
+        ...cs.student_id.toObject(),
+        enrolled_at: cs.enrolled_at,
+        status: cs.status
+      }));
+
+      // Get all sessions for this course
+      const sessions = await Session.find({ course_id: course._id })
+        .sort({ start_ts: -1 });
+
+      // Categorize sessions
+      const activeSessions = sessions.filter(session => !session.isExpired());
+      const expiredSessions = sessions.filter(session => session.isExpired());
+
+      // Calculate course statistics
+      const totalSessions = sessions.length;
+      const totalStudents = students.length;
+      
+      // Get attendance statistics
+      const attendanceStats = await Attendance.aggregate([
+        {
+          $lookup: {
+            from: "sessions",
+            localField: "session_id",
+            foreignField: "_id",
+            as: "session"
+          }
+        },
+        {
+          $match: {
+            "session.course_id": course._id
+          }
+        },
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      // Process attendance stats
+      let totalAttendanceRecords = 0;
+      let presentCount = 0;
+      let absentCount = 0;
+      let rejectedCount = 0;
+
+      attendanceStats.forEach(stat => {
+        totalAttendanceRecords += stat.count;
+        if (stat._id === "present" || stat._id === "manual_present") {
+          presentCount += stat.count;
+        } else if (stat._id === "absent") {
+          absentCount += stat.count;
+        } else if (stat._id === "rejected") {
+          rejectedCount += stat.count;
+        }
+      });
+
+      // Calculate average attendance rate
+      const averageAttendanceRate = totalAttendanceRecords > 0 
+        ? Math.round((presentCount / totalAttendanceRecords) * 100)
+        : 0;
+
+      // Get recent session activity
+      const recentSessions = sessions.slice(0, 5).map(session => ({
+        _id: session._id,
+        session_code: session.session_code,
+        start_time: session.start_ts,
+        end_time: session.end_ts,
+        expiry_time: session.expiry_ts,
+        duration_minutes: session.duration_minutes,
+        is_active: !session.isExpired(),
+        is_expired: session.isExpired(),
+        location: session.location
+      }));
+
+      res.json({
+        course: course.toObject(),
+        students: {
+          total: totalStudents,
+          active: students.filter(s => s.status === 'active').length,
+          inactive: students.filter(s => s.status === 'inactive').length,
+          list: students
+        },
+        sessions: {
+          total: totalSessions,
+          active: activeSessions.length,
+          expired: expiredSessions.length,
+          recent: recentSessions,
+          active_sessions: activeSessions.map(session => ({
+            _id: session._id,
+            session_code: session.session_code,
+            start_time: session.start_ts,
+            expiry_time: session.expiry_ts,
+            duration_minutes: session.duration_minutes,
+            location: session.location
+          })),
+          pending_sessions: [] // You might want to add scheduled sessions here
+        },
+        statistics: {
+          total_students: totalStudents,
+          total_sessions: totalSessions,
+          active_sessions: activeSessions.length,
+          total_attendance_records: totalAttendanceRecords,
+          present_count: presentCount,
+          absent_count: absentCount,
+          rejected_count: rejectedCount,
+          average_attendance_rate: averageAttendanceRate,
+          last_session: sessions.length > 0 ? sessions[0].start_ts : null,
+          course_activity: {
+            sessions_this_week: sessions.filter(s => 
+              s.start_ts >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+            ).length,
+            sessions_this_month: sessions.filter(s => 
+              s.start_ts >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+            ).length
+          }
+        }
+      });
     } catch (error) {
       console.error("Get course error:", error);
       res.status(500).json({ error: "Internal server error" });
