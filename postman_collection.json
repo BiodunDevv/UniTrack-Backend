@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "InClass",
-    "description": "Comprehensive API collection for testing InClass Attendance System with Student Sharing features",
+    "name": "UniTrack Attendance System",
+    "description": "Comprehensive API collection for testing UniTrack Attendance System with enhanced email verification and student sharing features.\n\n## 🔐 Authentication Flow\n\n### New User Registration:\n1. **Register Teacher** - Creates account with OTP\n2. **Verify Registration** - Complete registration with OTP\n3. **Login** - Access the system\n\n### Unverified User Flow:\n1. **Login Unverified User** - Triggers new OTP\n2. **Request New Verification Code** - Get fresh OTP if needed\n3. **Verify Email with OTP** - Complete verification and login\n\n### Existing User Flow:\n1. **Login Teacher/Admin** - Direct login for verified users\n2. **Request Password Reset OTP** - If password forgotten\n3. **Verify OTP and Reset Password** - Complete password reset\n\n### Features:\n- ✅ Email verification required for teachers\n- ✅ Admins are auto-verified\n- ✅ OTPs expire after 1 hour\n- ✅ Welcome emails after verification\n- ✅ Enhanced email templates with expiry times\n- ✅ OTPs stored in user models (not separate collection)",
     "version": "2.0.0",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -28,6 +28,11 @@
     },
     {
       "key": "registrationToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verificationToken",
       "value": "",
       "type": "string"
     },
@@ -171,7 +176,7 @@
           }
         },
         {
-          "name": "3. Login Teacher",
+          "name": "3. Login Teacher (Verified)",
           "event": [
             {
               "listen": "test",
@@ -182,6 +187,9 @@
                   "    pm.collectionVariables.set('authToken', response.token);",
                   "    pm.test('Auth token received', function () {",
                   "        pm.expect(response.token).to.be.a('string');",
+                  "    });",
+                  "    pm.test('User type is teacher', function () {",
+                  "        pm.expect(response.userType).to.eql('teacher');",
                   "    });",
                   "}",
                   "",
@@ -203,7 +211,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"teacher@unitrack.edu\",\n  \"password\": \"teacher123\"\n}"
+              "raw": "{\n  \"email\": \"muhammedabiodun42@gmail.com\",\n  \"password\": \"balikiss12\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/login",
@@ -213,7 +221,52 @@
           }
         },
         {
-          "name": "4. Login Admin",
+          "name": "4. Login Unverified User (Gets OTP)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 403) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('verificationToken', response.verificationToken);",
+                  "    pm.test('Verification token received', function () {",
+                  "        pm.expect(response.verificationToken).to.be.a('string');",
+                  "    });",
+                  "    pm.test('Needs verification flag set', function () {",
+                  "        pm.expect(response.needsVerification).to.be.true;",
+                  "    });",
+                  "}",
+                  "",
+                  "pm.test('Status code is 403 (Email not verified)', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"unverified@example.com\",\n  \"password\": \"balikiss12\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "5. Request New Verification Code",
           "event": [
             {
               "listen": "test",
@@ -221,7 +274,10 @@
                 "exec": [
                   "if (pm.response.code === 200) {",
                   "    const response = pm.response.json();",
-                  "    pm.collectionVariables.set('authToken', response.token);",
+                  "    pm.collectionVariables.set('verificationToken', response.verificationToken);",
+                  "    pm.test('New verification token received', function () {",
+                  "        pm.expect(response.verificationToken).to.be.a('string');",
+                  "    });",
                   "}",
                   "",
                   "pm.test('Status code is 200', function () {",
@@ -242,7 +298,97 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@unitrack.edu\",\n  \"password\": \"admin123\"\n}"
+              "raw": "{\n  \"email\": \"unverified@example.com\",\n  \"verificationToken\": \"{{verificationToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/request_verification_code",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "request_verification_code"]
+            }
+          }
+        },
+        {
+          "name": "6. Verify Email with OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('authToken', response.token);",
+                  "    pm.test('Auth token received after verification', function () {",
+                  "        pm.expect(response.token).to.be.a('string');",
+                  "    });",
+                  "    pm.test('User type is teacher', function () {",
+                  "        pm.expect(response.userType).to.eql('teacher');",
+                  "    });",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"verificationToken\": \"{{verificationToken}}\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/verify_email",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "verify_email"]
+            }
+          }
+        },
+        {
+          "name": "7. Login Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('authToken', response.token);",
+                  "    pm.test('Auth token received', function () {",
+                  "        pm.expect(response.token).to.be.a('string');",
+                  "    });",
+                  "    pm.test('User type is admin', function () {",
+                  "        pm.expect(response.userType).to.eql('admin');",
+                  "    });",
+                  "}",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"louisdiaz43@gmail.com\",\n  \"password\": \"balikiss12\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/login",
@@ -252,7 +398,79 @@
           }
         },
         {
-          "name": "5. Request Password Reset OTP",
+          "name": "8. Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Logout successful message', function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.eql('Logout successful');",
+                  "});",
+                  "",
+                  "pm.test('Timestamp provided', function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.timestamp).to.be.a('string');",
+                  "});",
+                  "",
+                  "// Clear the auth token after successful logout",
+                  "if (pm.response.code === 200) {",
+                  "    pm.collectionVariables.unset('authToken');",
+                  "    console.log('Auth token cleared after logout');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          }
+        },
+        {
+          "name": "9. Request Password Reset OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains success message', function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.include('OTP has been sent');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -263,7 +481,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"teacher@unitrack.edu\",\n  \"purpose\": \"password_reset\"\n}"
+              "raw": "{\n  \"email\": \"muhammedabiodun42@gmail.com\",\n  \"purpose\": \"password_reset\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/request_otp",
@@ -273,7 +491,25 @@
           }
         },
         {
-          "name": "6. Verify OTP and Reset Password",
+          "name": "10. Verify OTP and Reset Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Password reset successful', function () {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.message).to.include('Password reset successful');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -284,7 +520,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"teacher@unitrack.edu\",\n  \"otp\": \"123456\",\n  \"purpose\": \"password_reset\",\n  \"newPassword\": \"newpassword123\"\n}"
+              "raw": "{\n  \"email\": \"muhammedabiodun42@gmail.com\",\n  \"otp\": \"123456\",\n  \"purpose\": \"password_reset\",\n  \"newPassword\": \"newpassword123\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/auth/verify_otp",

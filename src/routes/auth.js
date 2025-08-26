@@ -13,6 +13,7 @@ const {
 const validate = require("../middleware/validation");
 const { strictLimiter, otpLimiter } = require("../middleware/rateLimiter");
 const auditLogger = require("../middleware/auditLogger");
+const { auth } = require("../middleware/auth");
 
 const emailService = new EmailService();
 
@@ -274,6 +275,35 @@ router.post(
     }
   }
 );
+
+// Logout
+router.post("/logout", auth, auditLogger("user_logout"), async (req, res) => {
+  try {
+    // In a JWT-based auth system, logout is primarily handled client-side
+    // by removing the token. Here we can perform server-side cleanup
+
+    // Update last login time as a logout marker
+    const user = req.user;
+    if (user) {
+      // You could add a last_logout field to track logout times
+      // user.last_logout = new Date();
+      // await user.save();
+    }
+
+    // In a production system, you might want to:
+    // 1. Add the token to a blacklist/Redis cache
+    // 2. Log the logout event
+    // 3. Clear any server-side sessions
+
+    res.json({
+      message: "Logout successful",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // Request new verification code
 router.post(
