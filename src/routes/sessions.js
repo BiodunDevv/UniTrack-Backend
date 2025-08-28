@@ -351,14 +351,16 @@ router.get(
         .populate("student_id", "matric_no name")
         .sort({ submitted_at: -1 });
 
-      // Get all submissions for this session (for fallback if no recent ones)
-      const allSubmissions =
-        recentSubmissions.length === 0
-          ? await Attendance.find({ session_id: sessionId })
-              .populate("student_id", "matric_no name")
-              .sort({ submitted_at: -1 })
-              .limit(10) // Show last 10 submissions
-          : [];
+      // Always ensure we have at least 10 recent submissions
+      let finalSubmissions = recentSubmissions;
+      
+      if (recentSubmissions.length < 10) {
+        // Get the latest 10 submissions regardless of time window
+        finalSubmissions = await Attendance.find({ session_id: sessionId })
+          .populate("student_id", "matric_no name")
+          .sort({ submitted_at: -1 })
+          .limit(10);
+      }
 
       // Get total counts
       const totalSubmissions = await Attendance.countDocuments({
@@ -385,8 +387,7 @@ router.get(
           expires_at: session.expiry_ts,
           started_at: session.start_ts,
         },
-        recent_submissions:
-          recentSubmissions.length > 0 ? recentSubmissions : allSubmissions,
+        recent_submissions: finalSubmissions,
         live_stats: {
           total_submissions: totalSubmissions,
           present_count: presentCount,
@@ -394,11 +395,13 @@ router.get(
           last_submission: latestSubmission?.submitted_at || null,
           last_updated: new Date(),
           time_window_minutes: parseInt(minutes),
+          submissions_in_window: recentSubmissions.length,
+          showing_count: finalSubmissions.length,
         },
         meta: {
-          showing_recent: recentSubmissions.length > 0,
-          showing_all_recent:
-            recentSubmissions.length === 0 && allSubmissions.length > 0,
+          within_time_window: recentSubmissions.length,
+          showing_latest: finalSubmissions.length,
+          expanded_to_show_minimum: recentSubmissions.length < 10 && finalSubmissions.length > recentSubmissions.length,
         },
       });
     } catch (error) {
