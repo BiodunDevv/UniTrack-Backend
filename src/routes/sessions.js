@@ -219,7 +219,7 @@ router.get(
 
       // Build query based on user type
       let query = { _id: sessionId };
-      
+
       // If teacher, only show their sessions. If admin, show all sessions
       if (req.teacher) {
         query.teacher_id = req.teacher._id;
@@ -324,10 +324,11 @@ router.get(
   async (req, res) => {
     try {
       const { sessionId } = req.params;
+      const { minutes = 10 } = req.query; // Allow custom time window, default 10 minutes
 
       // Build query based on user type
       let query = { _id: sessionId };
-      
+
       // If teacher, only show their sessions. If admin, show all sessions
       if (req.teacher) {
         query.teacher_id = req.teacher._id;
@@ -339,13 +340,25 @@ router.get(
         return res.status(404).json({ error: "Session not found" });
       }
 
-      // Get recent attendance submissions (last 30 seconds)
+      // Convert minutes to milliseconds
+      const timeWindow = parseInt(minutes) * 60 * 1000;
+
+      // Get recent attendance submissions (customizable time window)
       const recentSubmissions = await Attendance.find({
         session_id: sessionId,
-        submitted_at: { $gte: new Date(Date.now() - 30000) },
+        submitted_at: { $gte: new Date(Date.now() - timeWindow) },
       })
         .populate("student_id", "matric_no name")
         .sort({ submitted_at: -1 });
+
+      // Get all submissions for this session (for fallback if no recent ones)
+      const allSubmissions =
+        recentSubmissions.length === 0
+          ? await Attendance.find({ session_id: sessionId })
+              .populate("student_id", "matric_no name")
+              .sort({ submitted_at: -1 })
+              .limit(10) // Show last 10 submissions
+          : [];
 
       // Get total counts
       const totalSubmissions = await Attendance.countDocuments({
@@ -355,18 +368,37 @@ router.get(
         session_id: sessionId,
         status: { $in: ["present", "manual_present"] },
       });
+      const rejectedCount = await Attendance.countDocuments({
+        session_id: sessionId,
+        status: "rejected",
+      });
+
+      // Get latest submission time
+      const latestSubmission = await Attendance.findOne({
+        session_id: sessionId,
+      }).sort({ submitted_at: -1 });
 
       res.json({
         session_info: {
           session_code: session.session_code,
           is_active: !session.isExpired(),
           expires_at: session.expiry_ts,
+          started_at: session.start_ts,
         },
-        recent_submissions: recentSubmissions,
+        recent_submissions:
+          recentSubmissions.length > 0 ? recentSubmissions : allSubmissions,
         live_stats: {
           total_submissions: totalSubmissions,
           present_count: presentCount,
+          rejected_count: rejectedCount,
+          last_submission: latestSubmission?.submitted_at || null,
           last_updated: new Date(),
+          time_window_minutes: parseInt(minutes),
+        },
+        meta: {
+          showing_recent: recentSubmissions.length > 0,
+          showing_all_recent:
+            recentSubmissions.length === 0 && allSubmissions.length > 0,
         },
       });
     } catch (error) {
