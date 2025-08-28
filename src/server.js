@@ -49,9 +49,42 @@ app.use(
     origin: true, // Allow all origins
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type", 
+      "Authorization", 
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+      "Access-Control-Request-Method",
+      "Access-Control-Request-Headers",
+      "User-Agent",
+      "Referer",
+      "Accept-Encoding",
+      "Accept-Language",
+      "Connection",
+      "Host"
+    ],
+    exposedHeaders: ["*"],
+    preflightContinue: false,
+    optionsSuccessStatus: 200
   })
 );
+
+// Additional CORS middleware for handling all preflight requests
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT,PATCH,DELETE");
+  res.header("Access-Control-Allow-Headers", "*");
+  res.header("Access-Control-Expose-Headers", "*");
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
 
 // Rate limiting
 app.use(generalLimiter);
