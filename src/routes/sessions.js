@@ -353,7 +353,7 @@ router.get(
 
       // Always ensure we have at least 10 recent submissions
       let finalSubmissions = recentSubmissions;
-      
+
       if (recentSubmissions.length < 10) {
         // Get the latest 10 submissions regardless of time window
         finalSubmissions = await Attendance.find({ session_id: sessionId })
@@ -401,7 +401,9 @@ router.get(
         meta: {
           within_time_window: recentSubmissions.length,
           showing_latest: finalSubmissions.length,
-          expanded_to_show_minimum: recentSubmissions.length < 10 && finalSubmissions.length > recentSubmissions.length,
+          expanded_to_show_minimum:
+            recentSubmissions.length < 10 &&
+            finalSubmissions.length > recentSubmissions.length,
         },
       });
     } catch (error) {

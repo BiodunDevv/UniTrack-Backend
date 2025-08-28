@@ -35,21 +35,45 @@ router.post(
     }),
     body("session_code")
       .isLength({ min: 4, max: 4 })
-      .withMessage("Session code must be 4 digits"),
+      .isNumeric()
+      .withMessage("Session code must be exactly 4 digits"),
     body("lat")
       .isFloat({ min: -90, max: 90 })
-      .withMessage("Valid latitude required"),
+      .withMessage("Valid latitude required (-90 to 90)"),
     body("lng")
       .isFloat({ min: -180, max: 180 })
-      .withMessage("Valid longitude required"),
+      .withMessage("Valid longitude required (-180 to 180)"),
     body("accuracy")
       .optional()
-      .isFloat({ min: 0 })
-      .withMessage("Accuracy must be a positive number"),
+      .isFloat({ min: 0, max: 10000 })
+      .withMessage("Accuracy must be between 0 and 10000 meters"),
     body("device_info")
       .optional()
       .isObject()
-      .withMessage("Device info must be an object"),
+      .withMessage("Device info must be an object")
+      .custom((value) => {
+        // Validate device_info structure if provided
+        if (value && typeof value === "object") {
+          const allowedFields = [
+            "platform",
+            "browser",
+            "screen_resolution",
+            "timezone",
+            "os",
+            "device_type",
+          ];
+          const providedFields = Object.keys(value);
+          const invalidFields = providedFields.filter(
+            (field) => !allowedFields.includes(field)
+          );
+          if (invalidFields.length > 0) {
+            throw new Error(
+              `Invalid device_info fields: ${invalidFields.join(", ")}`
+            );
+          }
+        }
+        return true;
+      }),
     body("level")
       .optional()
       .isInt({ min: 100, max: 600 })
@@ -88,6 +112,11 @@ router.post(
       if (!session) {
         return res.status(404).json({
           error: "Invalid session code or session has expired",
+          details: [
+            "Please check the session code provided by your lecturer",
+            "Session may have expired or not yet started",
+            "Contact your lecturer if you believe this is an error",
+          ],
         });
       }
 
@@ -98,8 +127,12 @@ router.post(
 
       if (!student) {
         return res.status(404).json({
-          error:
-            "Student not found. Please contact your teacher to be added to the course.",
+          error: "Student not found in the system",
+          details: [
+            "Your matriculation number is not registered in this system",
+            "Please contact your lecturer to be added to the course",
+            "Ensure you entered your matriculation number correctly",
+          ],
         });
       }
 
@@ -109,7 +142,7 @@ router.post(
         await student.save();
       }
 
-      // Check if student is enrolled in the course
+      // ENHANCED VALIDATION: Check if student is enrolled in the specific course for this session
       const CourseStudent = require("../models/CourseStudent");
       const enrollment = await CourseStudent.findOne({
         course_id: session.course_id._id,
@@ -119,6 +152,34 @@ router.post(
       if (!enrollment) {
         return res.status(403).json({
           error: "You are not enrolled in this course",
+          details: [
+            `Course: ${session.course_id.title} (${session.course_id.course_code})`,
+            `Lecturer: ${session.teacher_id.name}`,
+            "Please contact your lecturer to be added to this course",
+            "You can only submit attendance for courses you are enrolled in",
+          ],
+          course_info: {
+            course_name: session.course_id.title,
+            course_code: session.course_id.course_code,
+            lecturer: session.teacher_id.name,
+            session_code: session.session_code,
+          },
+        });
+      }
+
+      // ENHANCED VALIDATION: Verify student level matches course level (if both are specified)
+      if (
+        student.level &&
+        session.course_id.level &&
+        student.level !== session.course_id.level
+      ) {
+        return res.status(400).json({
+          error: "Level mismatch: You are not eligible for this course level",
+          details: [
+            `Your current level: ${student.level}`,
+            `Course level: ${session.course_id.level}`,
+            "Please contact your lecturer if you believe this is incorrect",
+          ],
         });
       }
 
@@ -131,9 +192,16 @@ router.post(
       if (existingAttendance) {
         return res.status(400).json({
           error: "Attendance already submitted for this session",
+          details: [
+            "You have already marked your attendance for this session",
+            `Previous submission status: ${existingAttendance.status}`,
+            `Submitted at: ${existingAttendance.submitted_at.toLocaleString()}`,
+          ],
           existing_record: {
             status: existingAttendance.status,
             submitted_at: existingAttendance.submitted_at,
+            course: session.course_id.title,
+            session_code: session.session_code,
           },
         });
       }
@@ -144,20 +212,54 @@ router.post(
         ...device_info,
       });
 
-      // Check if this device has already been used for this session
+      // ENHANCED VALIDATION: Check if this device has already been used for this session
       const deviceUsed = await Attendance.findOne({
         session_id: session._id,
         device_fingerprint: deviceFingerprint,
-      });
+      }).populate("student_id", "name matric_no");
 
       if (deviceUsed) {
         return res.status(400).json({
-          error:
-            "This device has already been used for attendance in this session",
+          error: "Device already used for attendance in this session",
+          details: [
+            "This device has already been used to submit attendance for this session",
+            `Previously used by: ${deviceUsed.student_id.name} (${deviceUsed.student_id.matric_no})`,
+            `Submitted at: ${deviceUsed.submitted_at.toLocaleString()}`,
+            "Each device can only be used once per session to prevent fraud",
+          ],
+          security_info: {
+            device_fingerprint: deviceFingerprint.substring(0, 8) + "...",
+            previous_user: deviceUsed.student_id.name,
+            previous_matric: deviceUsed.student_id.matric_no,
+            submission_time: deviceUsed.submitted_at,
+          },
         });
       }
 
-      // Check geolocation - is student within the required radius?
+      // ENHANCED VALIDATION: Additional security check - verify session belongs to correct course
+      if (!session.course_id || !session.teacher_id) {
+        return res.status(500).json({
+          error: "Session configuration error",
+          details: [
+            "This session is not properly configured",
+            "Please contact your lecturer to resolve this issue",
+          ],
+        });
+      }
+
+      // ENHANCED VALIDATION: Check if session is still active (double-check)
+      if (session.expiry_ts <= new Date()) {
+        return res.status(400).json({
+          error: "Session has expired",
+          details: [
+            `Session expired at: ${session.expiry_ts.toLocaleString()}`,
+            "Please ask your lecturer to start a new session",
+            "Attendance can only be submitted during active sessions",
+          ],
+        });
+      }
+
+      // ENHANCED GEOLOCATION VALIDATION - Check if student is within required radius
       const isInRange = isWithinRadius(
         session.lat,
         session.lng,
@@ -172,6 +274,36 @@ router.post(
       if (!isInRange) {
         status = "rejected";
         reason = "Location out of range";
+
+        // Calculate actual distance for better error reporting
+        const { calculateDistance } = require("../utils/helpers");
+        const actualDistance = Math.round(
+          calculateDistance(session.lat, session.lng, lat, lng)
+        );
+
+        // Return detailed location error
+        return res.status(400).json({
+          success: false,
+          error: "Location validation failed",
+          details: [
+            `You are too far from the session location`,
+            `Required radius: ${session.radius_m} meters`,
+            `Your distance: ${actualDistance} meters`,
+            "Please move closer to the session location and try again",
+          ],
+          location_info: {
+            required_radius: session.radius_m,
+            actual_distance: actualDistance,
+            session_location: {
+              lat: session.lat,
+              lng: session.lng,
+            },
+            your_location: {
+              lat: lat,
+              lng: lng,
+            },
+          },
+        });
       }
 
       // Generate receipt signature
@@ -214,7 +346,7 @@ router.post(
         }
       );
 
-      // Response based on status
+      // Response with enhanced validation details
       if (status === "present") {
         res.status(201).json({
           success: true,
@@ -223,10 +355,19 @@ router.post(
             student_name: student.name,
             matric_no: student.matric_no,
             course: session.course_id.title,
+            course_code: session.course_id.course_code,
             session_code: session.session_code,
+            lecturer: session.teacher_id.name,
             status,
             submitted_at: attendance.submitted_at,
             receipt: receiptSignature,
+          },
+          validation_passed: {
+            student_enrolled: true,
+            session_active: true,
+            device_unique: true,
+            location_valid: true,
+            level_match: true,
           },
         });
       } else {
@@ -238,10 +379,19 @@ router.post(
             student_name: student.name,
             matric_no: student.matric_no,
             course: session.course_id.title,
+            course_code: session.course_id.course_code,
             session_code: session.session_code,
+            lecturer: session.teacher_id.name,
             status,
             reason,
             submitted_at: attendance.submitted_at,
+          },
+          validation_results: {
+            student_enrolled: true,
+            session_active: true,
+            device_unique: true,
+            location_valid: false,
+            level_match: true,
           },
         });
       }
