@@ -233,38 +233,93 @@ router.get(
         return res.status(404).json({ error: "Session not found" });
       }
 
+      // Get all students enrolled in this course
+      const CourseStudent = require("../models/CourseStudent");
+      const allStudents = await CourseStudent.find({
+        course_id: session.course_id._id,
+      })
+        .populate("student_id", "name email matric_no level")
+        .sort({ "student_id.name": 1 })
+        .lean();
+
       // Get attendance records for this session
       const attendanceRecords = await Attendance.find({ session_id: sessionId })
-        .populate("student_id", "matric_no name email")
-        .sort({ submitted_at: -1 });
+        .populate("student_id", "name email matric_no level")
+        .sort({ submitted_at: -1 })
+        .lean();
 
-      // Calculate statistics
+      // Create a map of student attendance status
+      const attendanceMap = {};
+      attendanceRecords.forEach((record) => {
+        attendanceMap[record.student_id._id.toString()] = record;
+      });
+
+      // Build comprehensive student list with attendance status
+      const studentsWithAttendance = allStudents.map((enrollment) => {
+        const student = enrollment.student_id;
+        const studentId = student._id.toString();
+        const attendanceRecord = attendanceMap[studentId];
+
+        return {
+          _id: student._id,
+          name: student.name,
+          email: student.email,
+          matric_no: student.matric_no,
+          level: student.level,
+          attendance_status: attendanceRecord
+            ? attendanceRecord.status
+            : "absent",
+          submitted_at: attendanceRecord ? attendanceRecord.submitted_at : null,
+          location: attendanceRecord ? attendanceRecord.location : null,
+          distance_from_session_m: attendanceRecord
+            ? attendanceRecord.distance_from_session_m
+            : null,
+          device_info: attendanceRecord ? attendanceRecord.device_info : null,
+          reason: attendanceRecord ? attendanceRecord.reason : null,
+          has_submitted: !!attendanceRecord,
+        };
+      });
+
+      // Separate students by attendance status
+      const presentStudents = studentsWithAttendance.filter(
+        (s) =>
+          s.attendance_status === "present" ||
+          s.attendance_status === "manual_present"
+      );
+      const absentStudents = studentsWithAttendance.filter(
+        (s) => s.attendance_status === "absent"
+      );
+
+      // Calculate statistics based on all enrolled students
+      const totalEnrolled = allStudents.length;
       const totalSubmissions = attendanceRecords.length;
-      const presentCount = attendanceRecords.filter(
-        (record) =>
-          record.status === "present" || record.status === "manual_present"
-      ).length;
-      const absentCount = attendanceRecords.filter(
-        (record) => record.status === "absent"
-      ).length;
-      const rejectedCount = attendanceRecords.filter(
-        (record) => record.status === "rejected"
-      ).length;
+      const presentCount = presentStudents.length;
+      const absentCount = absentStudents.length;
 
       res.json({
         session: {
           ...session.toObject(),
           is_expired: session.isExpired(),
         },
+        students: {
+          all: studentsWithAttendance,
+          present: presentStudents,
+          absent: absentStudents,
+        },
+        // Keep the original attendance array for backward compatibility
         attendance: attendanceRecords,
         statistics: {
+          total_enrolled: totalEnrolled,
           total_submissions: totalSubmissions,
           present_count: presentCount,
           absent_count: absentCount,
-          rejected_count: rejectedCount,
           attendance_rate:
-            totalSubmissions > 0
-              ? Math.round((presentCount / totalSubmissions) * 100)
+            totalEnrolled > 0
+              ? Math.round((presentCount / totalEnrolled) * 100)
+              : 0,
+          submission_rate:
+            totalEnrolled > 0
+              ? Math.round((totalSubmissions / totalEnrolled) * 100)
               : 0,
         },
       });
@@ -717,8 +772,15 @@ router.post(
 // Get all lecturer sessions (both active and inactive)
 router.get("/lecturer/all", auth, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, course_id, search, full = false } = req.query;
-    
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      course_id,
+      search,
+      full = false,
+    } = req.query;
+
     // If full=true, don't use pagination
     const usePagination = full !== "true";
     const skip = usePagination ? (parseInt(page) - 1) * parseInt(limit) : 0;
@@ -874,12 +936,12 @@ router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
 
     // Get all students enrolled in this course
     const CourseStudent = require("../models/CourseStudent");
-    const allStudents = await CourseStudent.find({ 
-      course_id: session.course_id._id 
+    const allStudents = await CourseStudent.find({
+      course_id: session.course_id._id,
     })
-    .populate("student_id", "name email matric_no level")
-    .sort({ "student_id.name": 1 })
-    .lean();
+      .populate("student_id", "name email matric_no level")
+      .sort({ "student_id.name": 1 })
+      .lean();
 
     // Get attendance records for this session
     const attendanceRecords = await Attendance.find({ session_id: sessionId })
@@ -889,38 +951,44 @@ router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
 
     // Create a map of student attendance status
     const attendanceMap = {};
-    attendanceRecords.forEach(record => {
+    attendanceRecords.forEach((record) => {
       attendanceMap[record.student_id._id.toString()] = record;
     });
 
     // Build comprehensive student list with attendance status
-    const studentsWithAttendance = allStudents.map(enrollment => {
+    const studentsWithAttendance = allStudents.map((enrollment) => {
       const student = enrollment.student_id;
       const studentId = student._id.toString();
       const attendanceRecord = attendanceMap[studentId];
-      
+
       return {
         _id: student._id,
         name: student.name,
         email: student.email,
         matric_no: student.matric_no,
         level: student.level,
-        attendance_status: attendanceRecord ? attendanceRecord.status : "absent",
+        attendance_status: attendanceRecord
+          ? attendanceRecord.status
+          : "absent",
         submitted_at: attendanceRecord ? attendanceRecord.submitted_at : null,
         location: attendanceRecord ? attendanceRecord.location : null,
-        distance_from_session_m: attendanceRecord ? attendanceRecord.distance_from_session_m : null,
+        distance_from_session_m: attendanceRecord
+          ? attendanceRecord.distance_from_session_m
+          : null,
         device_info: attendanceRecord ? attendanceRecord.device_info : null,
         reason: attendanceRecord ? attendanceRecord.reason : null,
-        has_submitted: !!attendanceRecord
+        has_submitted: !!attendanceRecord,
       };
     });
 
     // Separate students by attendance status
-    const presentStudents = studentsWithAttendance.filter(s => 
-      s.attendance_status === "present" || s.attendance_status === "manual_present"
+    const presentStudents = studentsWithAttendance.filter(
+      (s) =>
+        s.attendance_status === "present" ||
+        s.attendance_status === "manual_present"
     );
-    const absentStudents = studentsWithAttendance.filter(s => 
-      s.attendance_status === "absent"
+    const absentStudents = studentsWithAttendance.filter(
+      (s) => s.attendance_status === "absent"
     );
 
     // Calculate session statistics
@@ -929,8 +997,10 @@ router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
       total_attendance_submissions: attendanceRecords.length,
       present_count: presentStudents.length,
       absent_count: absentStudents.length,
-      attendance_rate: allStudents.length > 0 ? 
-        Math.round((presentStudents.length / allStudents.length) * 100) : 0,
+      attendance_rate:
+        allStudents.length > 0
+          ? Math.round((presentStudents.length / allStudents.length) * 100)
+          : 0,
       is_currently_active: session.is_active && new Date() < session.expiry_ts,
       duration_minutes: Math.round(
         (session.expiry_ts - session.start_ts) / 60000
@@ -971,8 +1041,8 @@ router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
           total_enrolled: allStudents.length,
           present: presentStudents.length,
           absent: absentStudents.length,
-          attendance_rate: stats.attendance_rate + "%"
-        }
+          attendance_rate: stats.attendance_rate + "%",
+        },
       },
     });
   } catch (error) {
