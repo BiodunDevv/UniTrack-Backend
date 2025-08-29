@@ -717,8 +717,12 @@ router.post(
 // Get all lecturer sessions (both active and inactive)
 router.get("/lecturer/all", auth, async (req, res) => {
   try {
-    const { page = 1, limit = 20, status, course_id, search } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const { page = 1, limit = 20, status, course_id, search, full = false } = req.query;
+    
+    // If full=true, don't use pagination
+    const usePagination = full !== "true";
+    const skip = usePagination ? (parseInt(page) - 1) * parseInt(limit) : 0;
+    const limitNum = usePagination ? parseInt(limit) : 0; // 0 means no limit
 
     // Build query
     let query = {};
@@ -758,12 +762,15 @@ router.get("/lecturer/all", auth, async (req, res) => {
       ];
     }
 
-    const sessions = await Session.find(query)
+    let sessionsQuery = Session.find(query)
       .populate("course_id", "title course_code level semester academic_year")
-      .sort({ created_at: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
+      .sort({ created_at: -1 });
+
+    if (usePagination) {
+      sessionsQuery = sessionsQuery.skip(skip).limit(limitNum);
+    }
+
+    const sessions = await sessionsQuery.lean();
 
     // Get attendance count for each session
     const sessionsWithStats = await Promise.all(
@@ -799,16 +806,10 @@ router.get("/lecturer/all", auth, async (req, res) => {
 
     const total = await Session.countDocuments(query);
 
-    res.json({
+    const response = {
       success: true,
       data: {
         sessions: sessionsWithStats,
-        pagination: {
-          current_page: parseInt(page),
-          total_pages: Math.ceil(total / parseInt(limit)),
-          total_items: total,
-          items_per_page: parseInt(limit),
-        },
         summary: {
           total_sessions: total,
           active_sessions: sessionsWithStats.filter(
@@ -819,7 +820,19 @@ router.get("/lecturer/all", auth, async (req, res) => {
           ).length,
         },
       },
-    });
+    };
+
+    // Only include pagination if not requesting full data
+    if (usePagination) {
+      response.data.pagination = {
+        current_page: parseInt(page),
+        total_pages: Math.ceil(total / parseInt(limit)),
+        total_items: total,
+        items_per_page: parseInt(limit),
+      };
+    }
+
+    res.json(response);
   } catch (error) {
     console.error("Get lecturer sessions error:", error);
     res.status(500).json({
@@ -859,34 +872,73 @@ router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
       });
     }
 
-    // Get attendance details
+    // Get all students enrolled in this course
+    const CourseStudent = require("../models/CourseStudent");
+    const allStudents = await CourseStudent.find({ 
+      course_id: session.course_id._id 
+    })
+    .populate("student_id", "name email matric_no level")
+    .sort({ "student_id.name": 1 })
+    .lean();
+
+    // Get attendance records for this session
     const attendanceRecords = await Attendance.find({ session_id: sessionId })
       .populate("student_id", "name email matric_no level")
       .sort({ submitted_at: -1 })
       .lean();
 
+    // Create a map of student attendance status
+    const attendanceMap = {};
+    attendanceRecords.forEach(record => {
+      attendanceMap[record.student_id._id.toString()] = record;
+    });
+
+    // Build comprehensive student list with attendance status
+    const studentsWithAttendance = allStudents.map(enrollment => {
+      const student = enrollment.student_id;
+      const studentId = student._id.toString();
+      const attendanceRecord = attendanceMap[studentId];
+      
+      return {
+        _id: student._id,
+        name: student.name,
+        email: student.email,
+        matric_no: student.matric_no,
+        level: student.level,
+        attendance_status: attendanceRecord ? attendanceRecord.status : "absent",
+        submitted_at: attendanceRecord ? attendanceRecord.submitted_at : null,
+        location: attendanceRecord ? attendanceRecord.location : null,
+        distance_from_session_m: attendanceRecord ? attendanceRecord.distance_from_session_m : null,
+        device_info: attendanceRecord ? attendanceRecord.device_info : null,
+        reason: attendanceRecord ? attendanceRecord.reason : null,
+        has_submitted: !!attendanceRecord
+      };
+    });
+
+    // Separate students by attendance status
+    const presentStudents = studentsWithAttendance.filter(s => 
+      s.attendance_status === "present" || s.attendance_status === "manual_present"
+    );
+    const absentStudents = studentsWithAttendance.filter(s => 
+      s.attendance_status === "absent"
+    );
+
     // Calculate session statistics
     const stats = {
-      total_attendance: attendanceRecords.length,
-      unique_students: [
-        ...new Set(attendanceRecords.map((a) => a.student_id._id.toString())),
-      ].length,
+      total_students_enrolled: allStudents.length,
+      total_attendance_submissions: attendanceRecords.length,
+      present_count: presentStudents.length,
+      absent_count: absentStudents.length,
+      attendance_rate: allStudents.length > 0 ? 
+        Math.round((presentStudents.length / allStudents.length) * 100) : 0,
       is_currently_active: session.is_active && new Date() < session.expiry_ts,
       duration_minutes: Math.round(
-        (session.expiry_ts - session.created_at) / 60000
+        (session.expiry_ts - session.start_ts) / 60000
       ),
       time_remaining:
         session.is_active && new Date() < session.expiry_ts
           ? Math.max(0, Math.round((session.expiry_ts - new Date()) / 60000))
           : 0,
-      submission_timeline: attendanceRecords.map((record) => ({
-        student_name: record.student_id.name,
-        matric_no: record.student_id.matric_no,
-        submitted_at: record.submitted_at,
-        location: record.location,
-        distance_from_session: record.distance_from_session_m,
-        device_info: record.device_info,
-      })),
     };
 
     // Group attendance by time intervals (15-minute intervals)
@@ -894,7 +946,7 @@ router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
     attendanceRecords.forEach((record) => {
       const interval =
         Math.floor(
-          (record.submitted_at - session.created_at) / (15 * 60 * 1000)
+          (record.submitted_at - session.start_ts) / (15 * 60 * 1000)
         ) * 15;
       if (!timeIntervals[interval]) {
         timeIntervals[interval] = 0;
@@ -910,7 +962,17 @@ router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
           stats,
           attendance_distribution: timeIntervals,
         },
-        attendance_records: attendanceRecords,
+        students: {
+          all: studentsWithAttendance,
+          present: presentStudents,
+          absent: absentStudents,
+        },
+        summary: {
+          total_enrolled: allStudents.length,
+          present: presentStudents.length,
+          absent: absentStudents.length,
+          attendance_rate: stats.attendance_rate + "%"
+        }
       },
     });
   } catch (error) {

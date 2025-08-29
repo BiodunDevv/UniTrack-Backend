@@ -279,19 +279,16 @@ router.post(
       );
 
       let status = "present";
-      let reason = "";
+      let reason = "submitted online";
 
       if (!isInRange) {
-        status = "rejected";
-        reason = "Location out of range";
-
         // Calculate actual distance for better error reporting
         const { calculateDistance } = require("../utils/helpers");
         const actualDistance = Math.round(
           calculateDistance(session.lat, session.lng, lat, lng)
         );
 
-        // Return detailed location error
+        // Return detailed location error instead of storing as rejected
         return res.status(400).json({
           success: false,
           error: "Location validation failed",
@@ -438,7 +435,7 @@ router.get(
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 50;
       const skip = (page - 1) * limit;
-      const status = req.query.status; // present, absent, rejected, manual_present
+      const status = req.query.status; // present, absent, manual_present
 
       // Verify session belongs to teacher
       const session = await Session.findOne({
@@ -454,7 +451,7 @@ router.get(
       let query = { session_id: sessionId };
       if (
         status &&
-        ["present", "absent", "rejected", "manual_present"].includes(status)
+        ["present", "absent", "manual_present"].includes(status)
       ) {
         query.status = status;
       }
@@ -728,15 +725,14 @@ router.get(
           active_sessions: activeSessions,
           total_students: totalStudents,
           attendance_counts: {
-            present:
-              (statusCounts.present || 0) + (statusCounts.manual_present || 0),
-            absent: statusCounts.absent || 0,
-            rejected: statusCounts.rejected || 0,
-            total_submissions: Object.values(statusCounts).reduce(
-              (sum, count) => sum + count,
-              0
-            ),
-          },
+          present:
+            (statusCounts.present || 0) + (statusCounts.manual_present || 0),
+          absent: statusCounts.absent || 0,
+          total_submissions: Object.values(statusCounts).reduce(
+            (sum, count) => sum + count,
+            0
+          ),
+        },
         },
         recent_activity: recentAttendance,
       });
