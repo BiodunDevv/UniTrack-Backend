@@ -714,4 +714,360 @@ router.post(
   }
 );
 
+// Get all lecturer sessions (both active and inactive)
+router.get("/lecturer/all", auth, async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status, course_id, search } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build query
+    let query = {};
+
+    // Get all courses taught by this teacher
+    const teacherCourses = await Course.find({
+      teacher_id: req.teacher._id,
+    }).select("_id");
+    const courseIds = teacherCourses.map((course) => course._id);
+
+    query.course_id = { $in: courseIds };
+
+    // Filter by status if provided
+    if (status) {
+      if (status === "active") {
+        query.is_active = true;
+        query.expiry_ts = { $gt: new Date() };
+      } else if (status === "expired") {
+        query.$or = [{ is_active: false }, { expiry_ts: { $lte: new Date() } }];
+      } else if (status === "inactive") {
+        query.is_active = false;
+      }
+    }
+
+    // Filter by specific course if provided
+    if (course_id) {
+      query.course_id = course_id;
+    }
+
+    // Search by session code or course info if provided
+    if (search) {
+      const searchRegex = new RegExp(search, "i");
+      query.$or = [
+        { session_code: searchRegex },
+        { "course_info.title": searchRegex },
+        { "course_info.course_code": searchRegex },
+      ];
+    }
+
+    const sessions = await Session.find(query)
+      .populate("course_id", "title course_code level semester academic_year")
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    // Get attendance count for each session
+    const sessionsWithStats = await Promise.all(
+      sessions.map(async (session) => {
+        const attendanceCount = await Attendance.countDocuments({
+          session_id: session._id,
+        });
+        const uniqueStudents = await Attendance.distinct("student_id", {
+          session_id: session._id,
+        });
+
+        return {
+          ...session,
+          stats: {
+            total_attendance: attendanceCount,
+            unique_students: uniqueStudents.length,
+            is_currently_active:
+              session.is_active && new Date() < session.expiry_ts,
+            duration_minutes: Math.round(
+              (session.expiry_ts - session.created_at) / 60000
+            ),
+            time_remaining:
+              session.is_active && new Date() < session.expiry_ts
+                ? Math.max(
+                    0,
+                    Math.round((session.expiry_ts - new Date()) / 60000)
+                  )
+                : 0,
+          },
+        };
+      })
+    );
+
+    const total = await Session.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        sessions: sessionsWithStats,
+        pagination: {
+          current_page: parseInt(page),
+          total_pages: Math.ceil(total / parseInt(limit)),
+          total_items: total,
+          items_per_page: parseInt(limit),
+        },
+        summary: {
+          total_sessions: total,
+          active_sessions: sessionsWithStats.filter(
+            (s) => s.stats.is_currently_active
+          ).length,
+          expired_sessions: sessionsWithStats.filter(
+            (s) => !s.stats.is_currently_active
+          ).length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get lecturer sessions error:", error);
+    res.status(500).json({
+      error: "Failed to fetch sessions",
+      message: "An internal server error occurred",
+    });
+  }
+});
+
+// Get detailed view of a specific session
+router.get("/lecturer/:sessionId/details", auth, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    // Find session and verify it belongs to this teacher's courses
+    const session = await Session.findById(sessionId)
+      .populate(
+        "course_id",
+        "title course_code level semester academic_year teacher_id"
+      )
+      .lean();
+
+    if (!session) {
+      return res.status(404).json({
+        error: "Session not found",
+        message: "The requested session does not exist",
+      });
+    }
+
+    // Verify this session belongs to the requesting teacher
+    if (
+      session.course_id.teacher_id.toString() !== req.teacher._id.toString()
+    ) {
+      return res.status(403).json({
+        error: "Access denied",
+        message: "You can only view sessions from your own courses",
+      });
+    }
+
+    // Get attendance details
+    const attendanceRecords = await Attendance.find({ session_id: sessionId })
+      .populate("student_id", "name email matric_no level")
+      .sort({ submitted_at: -1 })
+      .lean();
+
+    // Calculate session statistics
+    const stats = {
+      total_attendance: attendanceRecords.length,
+      unique_students: [
+        ...new Set(attendanceRecords.map((a) => a.student_id._id.toString())),
+      ].length,
+      is_currently_active: session.is_active && new Date() < session.expiry_ts,
+      duration_minutes: Math.round(
+        (session.expiry_ts - session.created_at) / 60000
+      ),
+      time_remaining:
+        session.is_active && new Date() < session.expiry_ts
+          ? Math.max(0, Math.round((session.expiry_ts - new Date()) / 60000))
+          : 0,
+      submission_timeline: attendanceRecords.map((record) => ({
+        student_name: record.student_id.name,
+        matric_no: record.student_id.matric_no,
+        submitted_at: record.submitted_at,
+        location: record.location,
+        distance_from_session: record.distance_from_session_m,
+        device_info: record.device_info,
+      })),
+    };
+
+    // Group attendance by time intervals (15-minute intervals)
+    const timeIntervals = {};
+    attendanceRecords.forEach((record) => {
+      const interval =
+        Math.floor(
+          (record.submitted_at - session.created_at) / (15 * 60 * 1000)
+        ) * 15;
+      if (!timeIntervals[interval]) {
+        timeIntervals[interval] = 0;
+      }
+      timeIntervals[interval]++;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        session: {
+          ...session,
+          stats,
+          attendance_distribution: timeIntervals,
+        },
+        attendance_records: attendanceRecords,
+      },
+    });
+  } catch (error) {
+    console.error("Get session details error:", error);
+    res.status(500).json({
+      error: "Failed to fetch session details",
+      message: "An internal server error occurred",
+    });
+  }
+});
+
+// Get lecturer session analytics
+router.get("/lecturer/analytics", auth, async (req, res) => {
+  try {
+    const { days = 30, course_id } = req.query;
+    const startDate = new Date(
+      Date.now() - parseInt(days) * 24 * 60 * 60 * 1000
+    );
+
+    // Get teacher's courses
+    let courseQuery = { teacher_id: req.teacher._id };
+    if (course_id) {
+      courseQuery._id = course_id;
+    }
+
+    const teacherCourses = await Course.find(courseQuery).select(
+      "_id title course_code"
+    );
+    const courseIds = teacherCourses.map((course) => course._id);
+
+    // Get sessions in date range
+    const sessions = await Session.find({
+      course_id: { $in: courseIds },
+      created_at: { $gte: startDate },
+    }).lean();
+
+    // Calculate analytics
+    const analytics = {
+      total_sessions: sessions.length,
+      active_sessions: sessions.filter(
+        (s) => s.is_active && new Date() < s.expiry_ts
+      ).length,
+      completed_sessions: sessions.filter(
+        (s) => !s.is_active || new Date() >= s.expiry_ts
+      ).length,
+
+      // Sessions by course
+      sessions_by_course: {},
+
+      // Sessions by day
+      sessions_by_day: {},
+
+      // Average session duration
+      average_duration: 0,
+
+      // Peak hours
+      sessions_by_hour: {},
+    };
+
+    let totalDuration = 0;
+
+    // Process each session
+    for (const session of sessions) {
+      const courseTitle =
+        teacherCourses.find(
+          (c) => c._id.toString() === session.course_id.toString()
+        )?.title || "Unknown";
+      const dayKey = session.created_at.toISOString().split("T")[0];
+      const hour = session.created_at.getHours();
+      const duration = Math.round(
+        (session.expiry_ts - session.created_at) / 60000
+      );
+
+      // By course
+      if (!analytics.sessions_by_course[courseTitle]) {
+        analytics.sessions_by_course[courseTitle] = 0;
+      }
+      analytics.sessions_by_course[courseTitle]++;
+
+      // By day
+      if (!analytics.sessions_by_day[dayKey]) {
+        analytics.sessions_by_day[dayKey] = 0;
+      }
+      analytics.sessions_by_day[dayKey]++;
+
+      // By hour
+      if (!analytics.sessions_by_hour[hour]) {
+        analytics.sessions_by_hour[hour] = 0;
+      }
+      analytics.sessions_by_hour[hour]++;
+
+      totalDuration += duration;
+    }
+
+    analytics.average_duration =
+      sessions.length > 0 ? Math.round(totalDuration / sessions.length) : 0;
+
+    // Get attendance analytics
+    const attendanceStats = await Attendance.aggregate([
+      {
+        $lookup: {
+          from: "sessions",
+          localField: "session_id",
+          foreignField: "_id",
+          as: "session",
+        },
+      },
+      {
+        $unwind: "$session",
+      },
+      {
+        $match: {
+          "session.course_id": { $in: courseIds },
+          submitted_at: { $gte: startDate },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total_attendance: { $sum: 1 },
+          unique_students: { $addToSet: "$student_id" },
+          average_distance: { $avg: "$distance_from_session_m" },
+        },
+      },
+    ]);
+
+    const attendanceData = attendanceStats[0] || {
+      total_attendance: 0,
+      unique_students: [],
+      average_distance: 0,
+    };
+
+    analytics.attendance_summary = {
+      total_submissions: attendanceData.total_attendance,
+      unique_students: attendanceData.unique_students.length,
+      average_distance_meters: Math.round(attendanceData.average_distance || 0),
+      average_attendance_per_session:
+        sessions.length > 0
+          ? Math.round(attendanceData.total_attendance / sessions.length)
+          : 0,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        period: `Last ${days} days`,
+        analytics,
+        courses: teacherCourses,
+      },
+    });
+  } catch (error) {
+    console.error("Get lecturer analytics error:", error);
+    res.status(500).json({
+      error: "Failed to fetch analytics",
+      message: "An internal server error occurred",
+    });
+  }
+});
+
 module.exports = router;

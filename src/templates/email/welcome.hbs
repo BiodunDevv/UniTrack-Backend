@@ -6,57 +6,54 @@
   <title>Welcome to UniTrack - {{teacherName}}</title>
   <style>
     body {
-      font-family: Roboto, Arial, sans-serif;
-      background: #f5f5f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f9f9f9;
       margin: 0;
       padding: 0;
+      color: #1d1d1f;
     }
     .email-wrapper {
       max-width: 600px;
-      margin: 0 auto;
+      margin: 40px auto;
       background: #fff;
-      border: 1px solid #e0e0e0;
-      border-radius: 6px;
+      border-radius: 12px;
       overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     }
     .header {
       text-align: center;
-      padding: 24px 16px;
-      background: #1a73e8;
-      color: #fff;
+      padding: 32px 20px 20px;
     }
     .header h1 {
-      font-size: 22px;
-      font-weight: 500;
-      margin: 8px 0;
+      font-size: 24px;
+      font-weight: 600;
+      margin: 10px 0;
+      color: #000;
     }
     .subtitle {
-      font-size: 14px;
-      opacity: 0.9;
+      font-size: 15px;
+      color: #6e6e73;
     }
     .content {
-      padding: 20px 16px;
-      font-size: 14px;
-      color: #202124;
+      padding: 28px 24px;
+      font-size: 15px;
+      line-height: 1.6;
     }
     .greeting {
-      font-size: 16px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      color: #1a73e8;
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 14px;
     }
     .credentials-container {
-      background: #e8f0fe;
-      border: 1px solid #dadce0;
-      border-radius: 4px;
-      padding: 12px;
-      margin: 16px 0;
+      background: #f5f5f7;
+      border-radius: 10px;
+      padding: 16px;
+      margin: 24px 0;
     }
     .credentials-title {
       font-size: 15px;
-      font-weight: 500;
-      color: #1967d2;
-      margin-bottom: 8px;
+      font-weight: 600;
+      margin-bottom: 10px;
     }
     .credential-item {
       margin: 6px 0;
@@ -65,109 +62,95 @@
     .credential-label {
       font-weight: 500;
       margin-right: 6px;
-      color: #202124;
     }
     .credential-value {
-      font-family: monospace;
-      background: #f1f3f4;
-      padding: 2px 4px;
-      border-radius: 3px;
+      font-family: SFMono-Regular, Consolas, monospace;
+      background: #e5e5ea;
+      padding: 2px 6px;
+      border-radius: 6px;
     }
     .steps {
-      margin: 20px 0;
+      margin: 24px 0;
     }
     .steps-title {
       font-size: 15px;
-      font-weight: 500;
-      color: #188038;
-      margin-bottom: 8px;
+      font-weight: 600;
+      margin-bottom: 10px;
     }
     .step {
-      margin: 10px 0;
+      margin: 8px 0;
       font-size: 14px;
-      padding-left: 4px;
     }
     .cta {
       text-align: center;
-      padding: 20px;
-      background: #fef7e0;
-      border-top: 1px solid #f1f3f4;
-    }
-    .cta-title {
-      font-size: 15px;
-      font-weight: 500;
-      color: #b06000;
-      margin-bottom: 8px;
+      padding: 28px;
+      background: #f9f9f9;
     }
     .cta-button {
-      background: #1a73e8;
+      background: #000;
       color: #fff;
-      padding: 10px 20px;
+      padding: 12px 28px;
       text-decoration: none;
-      font-weight: 500;
-      font-size: 14px;
-      border-radius: 4px;
+      font-weight: 600;
+      font-size: 15px;
+      border-radius: 8px;
       display: inline-block;
       margin-top: 10px;
     }
     .footer {
       text-align: center;
-      padding: 16px;
+      padding: 18px;
       font-size: 12px;
-      color: #5f6368;
-      border-top: 1px solid #e0e0e0;
+      color: #6e6e73;
+      border-top: 1px solid #e5e5ea;
       background: #fafafa;
     }
 
     /* Dark mode */
     @media (prefers-color-scheme: dark) {
-      body { background: #202124; }
-      .email-wrapper { background: #2d2f31; border: 1px solid #3c4043; }
-      .header { background: #1a73e8; color: #fff; }
-      .content { color: #e8eaed; }
-      .greeting { color: #8ab4f8; }
-      .credentials-container { background: #303134; border: 1px solid #3c4043; }
-      .credentials-title { color: #8ab4f8; }
-      .credential-label { color: #e8eaed; }
-      .credential-value { background: #3c4043; color: #e8eaed; }
-      .steps-title { color: #81c995; }
-      .step { color: #e8eaed; }
-      .cta { background: #3c4043; }
-      .cta-title { color: #fdd663; }
-      .cta-button { background: #8ab4f8; color: #202124; }
-      .footer { background: #2d2f31; color: #9aa0a6; border-top: 1px solid #3c4043; }
+      body { background: #000; color: #f5f5f7; }
+      .email-wrapper { background: #1c1c1e; box-shadow: none; }
+      .header h1 { color: #fff; }
+      .subtitle { color: #a1a1a6; }
+      .content { color: #f5f5f7; }
+      .credentials-container { background: #2c2c2e; }
+      .credential-value { background: #3a3a3c; color: #f5f5f7; }
+      .steps-title { color: #fff; }
+      .step { color: #f5f5f7; }
+      .cta { background: #1c1c1e; }
+      .cta-button { background: #fff; color: #000; }
+      .footer { background: #1c1c1e; color: #a1a1a6; border-top: 1px solid #2c2c2e; }
     }
   </style>
 </head>
 <body>
   <div class="email-wrapper">
     <div class="header">
-      <div style="font-size:32px;">🎓</div>
+      <div style="font-size:40px;">🎓</div>
       <h1>UniTrack</h1>
-      <div class="subtitle">Smart Attendance Management</div>
+      <div class="subtitle">Attendance. Simplified.</div>
     </div>
     <div class="content">
       <div class="greeting">Hello {{teacherName}}, 👋</div>
-      <p>Welcome to UniTrack! Your account is ready.</p>
+      <p>Welcome to UniTrack. Your account is ready.</p>
       <div class="credentials-container">
-        <div class="credentials-title">Your Account Credentials</div>
+        <div class="credentials-title">Your Credentials</div>
         <div class="credential-item"><span class="credential-label">Email:</span><span class="credential-value">{{teacherEmail}}</span></div>
         <div class="credential-item"><span class="credential-label">Password:</span><span class="credential-value">{{temporaryPassword}}</span></div>
       </div>
       <div class="steps">
-        <div class="steps-title">Quick Start Steps</div>
+        <div class="steps-title">Getting Started</div>
         <div class="step">1. Log in with your credentials</div>
         <div class="step">2. Create your courses</div>
         <div class="step">3. Start attendance sessions</div>
-        <div class="step">4. Monitor and generate reports</div>
+        <div class="step">4. View and export reports</div>
       </div>
     </div>
     <div class="cta">
-      <div class="cta-title">Ready to begin?</div>
       <a href="{{loginUrl}}" class="cta-button">Access Dashboard</a>
     </div>
     <div class="footer">
-      UniTrack Support Team • Need help? Contact us anytime
+      UniTrack Support Team • Contact us anytime
     </div>
   </div>
 </body>

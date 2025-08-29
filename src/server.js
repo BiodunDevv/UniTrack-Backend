@@ -18,6 +18,8 @@ const sessionRoutes = require("./routes/sessions");
 const attendanceRoutes = require("./routes/attendance");
 const adminRoutes = require("./routes/admin");
 const studentSharingRoutes = require("./routes/studentSharing");
+const supportRoutes = require("./routes/support");
+const faqRoutes = require("./routes/faq");
 
 // Import models to ensure they're registered
 require("./models/Teacher");
@@ -30,6 +32,7 @@ require("./models/DeviceFingerprint");
 require("./models/AuditLog");
 require("./models/EmailOtp");
 require("./models/StudentShareRequest");
+require("./models/FAQ");
 
 const app = express();
 
@@ -50,8 +53,8 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
-      "Content-Type", 
-      "Authorization", 
+      "Content-Type",
+      "Authorization",
       "X-Requested-With",
       "Accept",
       "Origin",
@@ -62,11 +65,11 @@ app.use(
       "Accept-Encoding",
       "Accept-Language",
       "Connection",
-      "Host"
+      "Host",
     ],
     exposedHeaders: ["*"],
     preflightContinue: false,
-    optionsSuccessStatus: 200
+    optionsSuccessStatus: 200,
   })
 );
 
@@ -74,12 +77,15 @@ app.use(
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS,POST,PUT,PATCH,DELETE");
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,HEAD,OPTIONS,POST,PUT,PATCH,DELETE"
+  );
   res.header("Access-Control-Allow-Headers", "*");
   res.header("Access-Control-Expose-Headers", "*");
-  
+
   // Handle preflight requests
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     res.sendStatus(200);
   } else {
     next();
@@ -114,6 +120,8 @@ app.use("/api/courses", sessionRoutes); // Session routes are nested under cours
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/student-sharing", studentSharingRoutes);
+app.use("/api/support", supportRoutes);
+app.use("/api/faq", faqRoutes);
 
 // Session routes that aren't nested under courses
 app.use("/api/sessions", sessionRoutes);

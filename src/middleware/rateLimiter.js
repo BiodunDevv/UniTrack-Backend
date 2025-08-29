@@ -36,9 +36,20 @@ const attendanceLimiter = rateLimit({
   },
 });
 
+// Support request rate limiter
+const supportLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 2, // Max 2 support requests per 5 minutes
+  message: {
+    error:
+      "Too many support requests. Please wait before submitting another request.",
+  },
+});
+
 module.exports = {
   generalLimiter,
   strictLimiter,
   otpLimiter,
   attendanceLimiter,
+  supportLimiter,
 };

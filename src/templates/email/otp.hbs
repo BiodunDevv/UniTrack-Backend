@@ -4,45 +4,130 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Verification Code - UniTrack</title>
     <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; } body { font-family:
-      'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
-      linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; }
-      .email-wrapper { max-width: 600px; margin: 0 auto; background: #ffffff;
-      border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px
-      rgba(0,0,0,0.1); animation: fadeIn 0.6s ease-in-out; } @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); } to { opacity: 1;
-      transform: translateY(0); } } .header { background:
-      linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding:
-      40px 30px; text-align: center; position: relative; } .header h1 {
-      font-size: 2.2rem; font-weight: 700; margin-bottom: 10px; } .header
-      .subtitle { font-size: 1.1rem; font-weight: 300; opacity: 0.9; } .content
-      { padding: 40px 30px; } .greeting { font-size: 1.3rem; color: #374151;
-      margin-bottom: 20px; font-weight: 600; } .message { font-size: 1.05rem;
-      color: #4b5563; margin-bottom: 30px; line-height: 1.7; } .otp-container {
-      text-align: center; margin: 40px 0; } .otp-label { font-size: 0.9rem;
-      color: #6b7280; text-transform: uppercase; letter-spacing: 1px;
-      margin-bottom: 12px; font-weight: 600; } .otp-code { font-size: 2.5rem;
-      font-weight: 900; color: #4f46e5; background: linear-gradient(135deg,
-      #f3f4f6 0%, #e5e7eb 100%); padding: 25px; border-radius: 15px; border: 3px
-      solid #e5e7eb; display: inline-block; min-width: 300px; font-family:
-      'Courier New', monospace; letter-spacing: 8px; box-shadow: inset 0 2px 5px
-      rgba(0,0,0,0.1); transition: transform 0.2s ease; } .otp-code:hover {
-      transform: scale(1.05); } .warning { background: linear-gradient(135deg,
-      #fef3c7 0%, #fed7aa 100%); border-left: 4px solid #f59e0b; padding: 20px;
-      border-radius: 10px; margin: 30px 0; display: flex; align-items: center;
-      gap: 10px; } .warning-text { font-size: 1rem; color: #92400e; font-weight:
-      500; } .security-note { background: #f0f9ff; border: 1px solid #0ea5e9;
-      border-radius: 10px; padding: 20px; margin: 30px 0; } .security-note-title
-      { font-weight: 600; color: #0369a1; margin-bottom: 10px; display: flex;
-      align-items: center; gap: 8px; } .security-note-text { color: #0c4a6e;
-      font-size: 0.95rem; line-height: 1.5; } .footer { background: #f9fafb;
-      padding: 25px; text-align: center; border-top: 1px solid #e5e7eb; }
-      .footer-text { color: #6b7280; font-size: 0.85rem; margin-bottom: 12px; }
-      .footer a { color: #4f46e5; text-decoration: none; font-weight: 500; }
-      .footer a:hover { text-decoration: underline; } @media (max-width: 600px)
-      { .email-wrapper { margin: 10px; border-radius: 15px; } .header { padding:
-      30px 20px; } .content { padding: 30px 20px; } .otp-code { font-size: 2rem;
-      letter-spacing: 4px; min-width: 250px; } .header h1 { font-size: 1.8rem; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: #f5f5f7;
+        padding: 20px;
+        color: #1d1d1f;
+      }
+
+      .email-wrapper {
+        max-width: 600px;
+        margin: 40px auto;
+        background: #ffffff;
+        border-radius: 20px;
+        overflow: hidden;
+        border: 1px solid #e5e5ea;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+      }
+
+      .header {
+        padding: 35px 30px 20px;
+        text-align: center;
+        border-bottom: 1px solid #f0f0f0;
+      }
+
+      .header h1 {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: #111827;
+        margin-bottom: 6px;
+      }
+
+      .subtitle {
+        font-size: 0.95rem;
+        color: #6b7280;
+        font-weight: 400;
+      }
+
+      .content {
+        padding: 40px 30px;
+        text-align: center;
+      }
+
+      .greeting {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-bottom: 15px;
+      }
+
+      .message {
+        font-size: 1rem;
+        color: #4b5563;
+        margin-bottom: 40px;
+        line-height: 1.5;
+      }
+
+      .otp-label {
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        color: #6b7280;
+        margin-bottom: 15px;
+        font-weight: 500;
+      }
+
+      .otp-code {
+        font-size: 2.8rem;
+        font-weight: 700;
+        letter-spacing: 12px;
+        font-family: "SF Mono", "Courier New", monospace;
+        color: #111827;
+        padding: 20px;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
+        display: inline-block;
+        background: #fafafa;
+      }
+
+      .warning {
+        margin-top: 40px;
+        font-size: 0.95rem;
+        color: #b45309;
+        background: #fff7ed;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #fed7aa;
+      }
+
+      .security-note {
+        margin-top: 25px;
+        padding: 20px;
+        border-radius: 12px;
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        font-size: 0.9rem;
+        color: #0369a1;
+        line-height: 1.5;
+      }
+
+      .footer {
+        text-align: center;
+        padding: 25px;
+        border-top: 1px solid #f0f0f0;
+        background: #fafafa;
+        font-size: 0.85rem;
+        color: #6b7280;
+      }
+
+      .footer a {
+        color: #2563eb;
+        text-decoration: none;
+        font-weight: 500;
+      }
+
+      .footer a:hover {
+        text-decoration: underline;
+      }
+
+      @media (max-width: 600px) {
+        .otp-code {
+          font-size: 2.2rem;
+          letter-spacing: 8px;
+          padding: 18px;
+        }
       }
     </style>
   </head>
@@ -52,43 +137,28 @@
         <h1>🎓 UniTrack</h1>
         <div class="subtitle">Attendance Management System</div>
       </div>
+
       <div class="content">
-        <div class="greeting">Hello there! 👋</div>
+        <div class="greeting">Hello 👋</div>
         <div class="message">
-          You're almost there! To
-          {{purpose}}, please verify your identity using the secure code below.
+          To {{purpose}}, please enter the code below on UniTrack.
         </div>
 
-        <div class="otp-container">
-          <div class="otp-label">Your Verification Code</div>
-          <div class="otp-code">{{otp}}</div>
-        </div>
+        <div class="otp-label">Your Code</div>
+        <div class="otp-code">{{otp}}</div>
 
         <div class="warning">
-          <span>⏰</span>
-          <span class="warning-text"><strong>Time Sensitive:</strong>
-            This code expires in
-            {{expiryMinutes}}
-            minutes ({{expiryTime}}) for your security.</span>
+          ⏰ This code expires in {{expiryMinutes}} minutes ({{expiryTime}}).
         </div>
 
         <div class="security-note">
-          <div class="security-note-title">🔒 Security Notice</div>
-          <div class="security-note-text">
-            If you didn't request this verification, please ignore this email.
-            Never share this code with anyone – UniTrack staff will never ask
-            for your verification codes.
-          </div>
+          If you didn’t request this, ignore this email. Never share your code. UniTrack staff will never ask for it.
         </div>
       </div>
+
       <div class="footer">
-        <div class="footer-text">
-          © 2025 UniTrack Attendance System. All rights reserved.<br />
-          Making attendance tracking simple and secure.
-        </div>
-        <a href="#">Visit Website</a>
-        |
-        <a href="#">Contact Support</a>
+        © 2025 UniTrack. All rights reserved.<br />
+        <a href="#">Visit Website</a> | <a href="#">Contact Support</a>
       </div>
     </div>
   </body>

@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "UniTrack Attendance System",
-    "description": "Comprehensive API collection for testing UniTrack Attendance System with enhanced email verification and student sharing features.\n\n## 🔐 Authentication Flow\n\n### New User Registration:\n1. **Register Teacher** - Creates account with OTP\n2. **Verify Registration** - Complete registration with OTP\n3. **Login** - Access the system\n\n### Unverified User Flow:\n1. **Login Unverified User** - Triggers new OTP\n2. **Request New Verification Code** - Get fresh OTP if needed\n3. **Verify Email with OTP** - Complete verification and login\n\n### Existing User Flow:\n1. **Login Teacher/Admin** - Direct login for verified users\n2. **Request Password Reset OTP** - If password forgotten\n3. **Verify OTP and Reset Password** - Complete password reset\n\n### Features:\n- ✅ Email verification required for teachers\n- ✅ Admins are auto-verified\n- ✅ OTPs expire after 1 hour\n- ✅ Welcome emails after verification\n- ✅ Enhanced email templates with expiry times\n- ✅ OTPs stored in user models (not separate collection)",
-    "version": "2.0.0",
+    "name": "UniTrack Attendance System - Complete API",
+    "description": "Comprehensive API collection for UniTrack Attendance System with FAQ management, Support system, Enhanced Session management and Analytics.\n\n## 🆕 New Features Added:\n\n### FAQ Management:\n- ✅ Get all FAQs with pagination and filtering\n- ✅ Get FAQ categories with counts\n- ✅ Create, update, delete FAQs (Admin only)\n- ✅ Bulk FAQ creation\n- ✅ FAQ view tracking\n\n### Support System:\n- ✅ Submit support requests with priority levels\n- ✅ Get support info and guidelines\n- ✅ FAQ system integration\n- ✅ Email notifications to all admins\n- ✅ User confirmation emails\n- ✅ Rate limiting for support requests\n\n### Enhanced Session Management:\n- ✅ Get all lecturer sessions (active/inactive)\n- ✅ Detailed session analytics\n- ✅ Session statistics and attendance data\n- ✅ Time-based analytics and trends\n\n## 🔐 Authentication Flow\n\n### New User Registration:\n1. **Register Teacher** - Creates account with OTP\n2. **Verify Registration** - Complete registration with OTP\n3. **Login** - Access the system\n\n### Unverified User Flow:\n1. **Login Unverified User** - Triggers new OTP\n2. **Request New Verification Code** - Get fresh OTP if needed\n3. **Verify Email with OTP** - Complete verification and login\n\n### Existing User Flow:\n1. **Login Teacher/Admin** - Direct login for verified users\n2. **Request Password Reset OTP** - If password forgotten\n3. **Verify OTP and Reset Password** - Complete password reset\n\n### Security & Validation:\n- ✅ Enhanced CORS support\n- ✅ Comprehensive input validation\n- ✅ Rate limiting on sensitive endpoints\n- ✅ Admin authentication for protected routes\n- ✅ Email verification required for teachers\n- ✅ Admins are auto-verified\n- ✅ OTPs expire after 1 hour\n- ✅ Welcome emails after verification\n- ✅ Enhanced email templates with expiry times\n- ✅ OTPs stored in user models (not separate collection)",
+    "version": "3.0.0",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -83,6 +83,26 @@
     },
     {
       "key": "studentId2",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "faqId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "supportTicketId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "teacherToken",
       "value": "",
       "type": "string"
     }
@@ -185,6 +205,7 @@
                   "if (pm.response.code === 200) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('authToken', response.token);",
+                  "    pm.collectionVariables.set('teacherToken', response.token);",
                   "    pm.test('Auth token received', function () {",
                   "        pm.expect(response.token).to.be.a('string');",
                   "    });",
@@ -362,6 +383,7 @@
                   "if (pm.response.code === 200) {",
                   "    const response = pm.response.json();",
                   "    pm.collectionVariables.set('authToken', response.token);",
+                  "    pm.collectionVariables.set('adminToken', response.token);",
                   "    pm.test('Auth token received', function () {",
                   "        pm.expect(response.token).to.be.a('string');",
                   "    });",
@@ -591,7 +613,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/courses?page=1&limit=10",
+              "raw": "{{baseUrl}}/courses?page=1&limit=10&level=200&search=programming",
               "host": ["{{baseUrl}}"],
               "path": ["courses"],
               "query": [
@@ -602,6 +624,18 @@
                 {
                   "key": "limit",
                   "value": "10"
+                },
+                {
+                  "key": "level",
+                  "value": "200",
+                  "disabled": true,
+                  "description": "Filter by course level (100, 200, 300, 400, 500, 600)"
+                },
+                {
+                  "key": "search",
+                  "value": "programming",
+                  "disabled": true,
+                  "description": "Search in course code and title"
                 }
               ]
             }
@@ -1020,6 +1054,166 @@
                 "students",
                 "{{studentId}}",
                 "mark"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 Enhanced Session Management",
+      "item": [
+        {
+          "name": "Get All Lecturer Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/all?page=1&limit=20&status=active",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "all"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "description": "Options: active, expired, inactive"
+                },
+                { "key": "course_id", "value": "", "disabled": true },
+                { "key": "search", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get All Sessions (No Filter)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/all",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "all"]
+            }
+          }
+        },
+        {
+          "name": "Get Expired Sessions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/all?status=expired",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "all"],
+              "query": [{ "key": "status", "value": "expired" }]
+            }
+          }
+        },
+        {
+          "name": "Search Sessions by Course",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/all?search=CS",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "all"],
+              "query": [{ "key": "search", "value": "CS" }]
+            }
+          }
+        },
+        {
+          "name": "Get Session Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/{{sessionId}}/details",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "{{sessionId}}", "details"]
+            }
+          }
+        },
+        {
+          "name": "Get Lecturer Analytics (7 days)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/analytics?days=7",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "analytics"],
+              "query": [{ "key": "days", "value": "7" }]
+            }
+          }
+        },
+        {
+          "name": "Get Lecturer Analytics (30 days)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/analytics?days=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "analytics"],
+              "query": [{ "key": "days", "value": "30" }]
+            }
+          }
+        },
+        {
+          "name": "Get Course-Specific Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{authToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sessions/lecturer/analytics?days=30&course_id={{courseId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["sessions", "lecturer", "analytics"],
+              "query": [
+                { "key": "days", "value": "30" },
+                { "key": "course_id", "value": "{{courseId}}" }
               ]
             }
           }
@@ -1886,6 +2080,228 @@
               "raw": "{{baseUrl}}/admin/health",
               "host": ["{{baseUrl}}"],
               "path": ["admin", "health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "📊 FAQ Management",
+      "item": [
+        {
+          "name": "Get All FAQs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/faq?page=1&limit=10&category=technical",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "category", "value": "technical" },
+                { "key": "search", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get FAQ Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/faq/categories",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq", "categories"]
+            }
+          }
+        },
+        {
+          "name": "Get Single FAQ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/faq/{{faqId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq", "{{faqId}}"]
+            }
+          }
+        },
+        {
+          "name": "Create FAQ (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"How do I reset my password?\",\n  \"answer\": \"You can reset your password by clicking the 'Forgot Password' link on the login page and following the email instructions.\",\n  \"category\": \"general\",\n  \"display_order\": 1,\n  \"tags\": [\"password\", \"reset\", \"login\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/faq",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq"]
+            }
+          }
+        },
+        {
+          "name": "Update FAQ (Admin)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"How do I reset my password? (Updated)\",\n  \"answer\": \"Updated answer: You can reset your password by clicking the 'Forgot Password' link on the login page.\",\n  \"category\": \"general\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/faq/{{faqId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq", "{{faqId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete FAQ (Admin)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/faq/{{faqId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq", "{{faqId}}"]
+            }
+          }
+        },
+        {
+          "name": "Bulk Create FAQs (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"faqs\": [\n    {\n      \"question\": \"What browsers are supported?\",\n      \"answer\": \"UniTrack supports all modern browsers including Chrome, Firefox, Safari, and Edge.\",\n      \"category\": \"technical\",\n      \"display_order\": 1\n    },\n    {\n      \"question\": \"How accurate is location tracking?\",\n      \"answer\": \"Location tracking is accurate within 5-10 meters using GPS technology.\",\n      \"category\": \"technical\",\n      \"display_order\": 2\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/faq/bulk",
+              "host": ["{{baseUrl}}"],
+              "path": ["faq", "bulk"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🎫 Support System",
+      "item": [
+        {
+          "name": "Submit Support Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john.doe@university.edu\",\n  \"user_type\": \"student\",\n  \"subject\": \"Unable to submit attendance\",\n  \"category\": \"attendance\",\n  \"priority\": \"medium\",\n  \"message\": \"I am having trouble submitting my attendance for today's session. The system shows an error message saying location is not valid, but I am clearly within the campus. Please help me resolve this issue as soon as possible.\",\n  \"phone\": \"+2348123456789\",\n  \"matric_no\": \"CS/2021/001\",\n  \"course_info\": {\n    \"course_code\": \"CS301\",\n    \"session_id\": \"12345\"\n  },\n  \"error_details\": {\n    \"error_code\": \"LOCATION_INVALID\",\n    \"error_message\": \"Location verification failed\",\n    \"timestamp\": \"2025-08-29T08:00:00Z\"\n  },\n  \"browser_info\": {\n    \"browser\": \"Chrome\",\n    \"version\": \"91.0.4472.124\",\n    \"os\": \"Windows 10\",\n    \"screen_resolution\": \"1920x1080\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/support/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "contact"]
+            }
+          }
+        },
+        {
+          "name": "Submit Urgent Support Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Smith\",\n  \"email\": \"jane.smith@university.edu\",\n  \"user_type\": \"teacher\",\n  \"subject\": \"System completely down - cannot create sessions\",\n  \"category\": \"urgent\",\n  \"priority\": \"urgent\",\n  \"message\": \"The entire attendance system appears to be down. I cannot create any new sessions for my classes and students are unable to submit attendance. This is affecting multiple classes and needs immediate attention.\",\n  \"phone\": \"+2348987654321\",\n  \"error_details\": {\n    \"error_code\": \"500\",\n    \"error_message\": \"Internal Server Error\",\n    \"timestamp\": \"2025-08-29T08:00:00Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/support/contact",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "contact"]
+            }
+          }
+        },
+        {
+          "name": "Get Support Information",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/support/info",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "info"]
+            }
+          }
+        },
+        {
+          "name": "Get Support FAQ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/support/faq",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "faq"]
+            }
+          }
+        },
+        {
+          "name": "Support System Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/support/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "health"]
             }
           }
         }

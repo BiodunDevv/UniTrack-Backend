@@ -166,9 +166,16 @@ Authorization: Bearer <token>
 ### Get Courses
 
 ```http
-GET /courses?page=1&limit=10
+GET /courses?page=1&limit=10&level=200&search=programming
 Authorization: Bearer <token>
 ```
+
+**Query Parameters:**
+
+- `page` (optional): Page number for pagination (default: 1)
+- `limit` (optional): Number of courses per page (default: 10)
+- `level` (optional): Filter by course level (100, 200, 300, 400, 500, 600)
+- `search` (optional): Search in course code and title
 
 **Response:**
 
@@ -176,25 +183,48 @@ Authorization: Bearer <token>
 {
   "courses": [
     {
-      "_id": "course-id",
-      "course_code": "CS101",
-      "title": "Introduction to Computer Science",
+      "_id": "68af21f71f08059b303b82c1",
       "teacher_id": {
-        "name": "John Doe",
-        "email": "john@example.com"
+        "_id": "68ae283386f3b217bd3f5181",
+        "name": "Jane Smith",
+        "email": "muhammedabiodun42@gmail.com"
       },
-      "created_at": "2025-08-24T10:30:00.000Z"
+      "course_code": "CS 103",
+      "title": "Data Structures",
+      "level": 500,
+      "created_at": "2025-08-27T15:19:19.539Z",
+      "createdAt": "2025-08-27T15:19:19.539Z",
+      "updatedAt": "2025-08-28T11:12:22.879Z",
+      "__v": 0,
+      "student_count": 25,
+      "active_sessions_count": 1,
+      "has_active_session": true,
+      "active_sessions": [
+        {
+          "_id": "68b16f6a642ca2dc809e9cee",
+          "session_code": "8665",
+          "start_ts": "2025-08-29T09:14:18.667Z",
+          "expiry_ts": "2025-08-29T10:14:18.667Z"
+        }
+      ]
     }
   ],
   "pagination": {
     "currentPage": 1,
-    "totalPages": 1,
-    "totalCourses": 1,
-    "hasNext": false,
+    "totalPages": 2,
+    "totalCourses": 11,
+    "hasNext": true,
     "hasPrev": false
   }
 }
 ```
+
+**New Fields Added:**
+
+- `student_count`: Number of students enrolled in the course
+- `active_sessions_count`: Number of currently active sessions for this course
+- `has_active_session`: Boolean indicating if the course has any active sessions
+- `active_sessions`: Array of active session objects with basic information
 
 ---
 
@@ -690,3 +720,253 @@ Common error scenarios:
 - **409**: Duplicate data (email, course code, etc.)
 - **429**: Rate limit exceeded
 - **500**: Server error
+
+---
+
+## Support & Help System
+
+The Support system allows users to contact administrators for help with technical issues, attendance problems, account management, and general inquiries.
+
+### Submit Support Request
+
+```http
+POST /support/contact
+```
+
+Submit a new support request that will be sent to all active administrators.
+
+**Rate Limit:** 2 requests per 5 minutes
+
+**Request Body:**
+
+```json
+{
+  "name": "John Doe",
+  "email": "john.doe@example.com",
+  "user_type": "student", // "student", "teacher", "admin", "other"
+  "subject": "Unable to submit attendance",
+  "category": "attendance", // "technical", "attendance", "account", "general", "urgent"
+  "priority": "medium", // "low", "medium", "high", "urgent"
+  "message": "Detailed description of the issue (20-2000 characters)",
+
+  // Optional fields
+  "phone": "+2348123456789",
+  "matric_no": "CS/2021/001", // For students
+  "course_info": {
+    "course_code": "CS301",
+    "session_id": "12345"
+  },
+  "error_details": {
+    "error_code": "500",
+    "error_message": "Internal Server Error",
+    "timestamp": "2025-08-29T07:30:00Z"
+  },
+  "browser_info": {
+    "browser": "Chrome",
+    "version": "91.0.4472.124",
+    "os": "Windows 10"
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Support request submitted successfully",
+  "ticketId": "TK175645301628642VM",
+  "data": {
+    "ticket_id": "TK175645301628642VM",
+    "subject": "Unable to submit attendance",
+    "category": "attendance",
+    "priority": "medium",
+    "submitted_at": "2025-08-29T07:36:56.284Z",
+    "admins_notified": 2,
+    "expected_response": "within 1-2 business days"
+  }
+}
+```
+
+### Get Support Information
+
+```http
+GET /support/info
+```
+
+Get information about support categories, priorities, guidelines, and contact tips.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "categories": {
+      "technical": "Technical Issues (Login problems, app crashes, etc.)",
+      "attendance": "Attendance Related (Session issues, missing records, etc.)",
+      "account": "Account Management (Profile updates, password issues, etc.)",
+      "general": "General Inquiry (Questions, suggestions, feedback)",
+      "urgent": "Urgent Issues (System down, critical problems)"
+    },
+    "priorities": {
+      "low": "Non-urgent issues that can wait",
+      "medium": "Issues affecting normal operation",
+      "high": "Important issues requiring prompt attention",
+      "urgent": "Critical issues requiring immediate attention"
+    },
+    "guidelines": [
+      "Provide as much detail as possible about your issue",
+      "Include relevant course or session information",
+      "For technical issues, include browser and device information",
+      "Use appropriate priority levels - reserve 'urgent' for critical system issues",
+      "Check the FAQ section before submitting a request"
+    ],
+    "contact_tips": [
+      "Be specific in your subject line",
+      "Include error messages exactly as they appear",
+      "Mention the steps you took before the issue occurred",
+      "Include your user type (student/teacher) and relevant course information"
+    ]
+  }
+}
+```
+
+### Get FAQ
+
+```http
+GET /support/faq
+```
+
+Get frequently asked questions organized by category.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "categories": [
+      {
+        "category": "Authentication",
+        "questions": [
+          {
+            "question": "I forgot my password, how can I reset it?",
+            "answer": "Use the 'Forgot Password' link on the login page to reset your password via email verification."
+          },
+          {
+            "question": "Why am I getting 'Invalid credentials' error?",
+            "answer": "Please check your email and password. Ensure caps lock is off and try again. If the problem persists, contact support."
+          }
+        ]
+      },
+      {
+        "category": "Attendance",
+        "questions": [
+          {
+            "question": "Why can't I submit attendance?",
+            "answer": "Ensure you're within the allowed location radius and the session is active. Check your internet connection and try again."
+          },
+          {
+            "question": "My attendance was not recorded, what should I do?",
+            "answer": "Contact your teacher immediately or submit a support request with your session details."
+          }
+        ]
+      },
+      {
+        "category": "Technical",
+        "questions": [
+          {
+            "question": "The app is not loading properly, what should I do?",
+            "answer": "Try refreshing the page, clearing your browser cache, or using a different browser. If the issue persists, contact support."
+          },
+          {
+            "question": "I'm getting location permission errors",
+            "answer": "Please allow location access in your browser settings and ensure GPS is enabled on your device."
+          }
+        ]
+      }
+    ],
+    "general_tips": [
+      "Clear your browser cache if you're experiencing loading issues",
+      "Ensure you have a stable internet connection",
+      "Allow location access for attendance submission",
+      "Use the latest version of your browser",
+      "Contact support if your issue isn't covered in the FAQ"
+    ]
+  }
+}
+```
+
+### Support System Health Check
+
+```http
+GET /support/health
+```
+
+Check if the support system is operational.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Support system is operational",
+  "timestamp": "2025-08-29T07:35:55.165Z",
+  "available_endpoints": [
+    "POST /contact - Submit support request",
+    "GET /info - Get support information and guidelines",
+    "GET /faq - Get frequently asked questions",
+    "GET /health - Check support system status"
+  ]
+}
+```
+
+### Support Categories
+
+- **technical**: Technical Issues (Login problems, app crashes, etc.)
+- **attendance**: Attendance Related (Session issues, missing records, etc.)
+- **account**: Account Management (Profile updates, password issues, etc.)
+- **general**: General Inquiry (Questions, suggestions, feedback)
+- **urgent**: Urgent Issues (System down, critical problems)
+
+### Priority Levels & Response Times
+
+- **urgent**: Critical issues requiring immediate attention (within 4-6 hours)
+- **high**: Important issues requiring prompt attention (within 24 hours)
+- **medium**: Issues affecting normal operation (within 1-2 business days)
+- **low**: Non-urgent issues that can wait (within 2-3 business days)
+
+### Email Notifications
+
+When a support request is submitted:
+
+1. **Admin Notification**: All active and verified administrators receive a detailed email with:
+
+   - Priority-coded visual styling
+   - Complete user information
+   - Technical details (browser info, error details, etc.)
+   - Direct reply-to functionality
+   - Ticket tracking information
+
+2. **User Confirmation**: The requester receives a confirmation email with:
+   - Unique ticket number for tracking
+   - Expected response timeframe
+   - Timeline of what happens next
+   - Instructions for follow-up
+
+### Rate Limiting
+
+- **Support Requests**: Maximum 2 requests per 5 minutes per IP address
+- This prevents spam while allowing legitimate urgent requests
+
+### Validation Rules
+
+- **Name**: 2-100 characters, required
+- **Email**: Valid email format, required
+- **Subject**: 5-200 characters, required
+- **Message**: 20-2000 characters, required
+- **Phone**: 10-15 characters, optional
+- **User Type**: Must be one of: student, teacher, admin, other
+- **Category**: Must be one of the defined categories
+- **Priority**: Must be one of: low, medium, high, urgent

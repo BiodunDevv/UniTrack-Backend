@@ -258,6 +258,117 @@ class EmailService {
       throw error;
     }
   }
+
+  async sendSupportRequestToAdmin(adminEmail, supportData) {
+    try {
+      const template = await this.loadTemplate("support-request");
+
+      // Determine priority color
+      const priorityColors = {
+        low: "#28a745",
+        medium: "#ffc107",
+        high: "#fd7e14",
+        urgent: "#dc3545",
+      };
+
+      // Register Handlebars helper for equality check
+      handlebars.registerHelper("eq", function (a, b) {
+        return a === b;
+      });
+
+      const html = template({
+        userName: supportData.name,
+        userEmail: supportData.email,
+        userType: supportData.user_type,
+        subject: supportData.subject,
+        category: supportData.category,
+        priority: supportData.priority.toLowerCase(),
+        priorityColor: priorityColors[supportData.priority] || "#6c757d",
+        message: supportData.message,
+        submittedAt: new Date(supportData.submittedAt).toLocaleString(),
+        ticketId: supportData.ticketId,
+        phone: supportData.phone,
+        matricNo: supportData.matric_no,
+        courseInfo: supportData.course_info
+          ? JSON.stringify(supportData.course_info, null, 2)
+          : null,
+        errorDetails: supportData.error_details
+          ? JSON.stringify(supportData.error_details, null, 2)
+          : null,
+        browserInfo: supportData.browser_info
+          ? JSON.stringify(supportData.browser_info, null, 2)
+          : null,
+        ip_address: supportData.ip_address,
+        user_agent: supportData.user_agent,
+        systemName: "UniTrack System",
+      });
+
+      const mailOptions = {
+        from: process.env.EMAIL_FROM,
+        to: adminEmail,
+        subject: `[Support Request] ${supportData.priority.toUpperCase()} - ${
+          supportData.subject
+        }`,
+        html,
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log("Support request email sent to admin:", info.messageId);
+      return info;
+    } catch (error) {
+      console.error("Failed to send support request email to admin:", error);
+      throw error;
+    }
+  }
+
+  async sendSupportConfirmation(userEmail, supportData) {
+    try {
+      const template = await this.loadTemplate("support-confirmation");
+
+      // Determine priority color and expected response time
+      const priorityColors = {
+        low: "#28a745",
+        medium: "#ffc107",
+        high: "#fd7e14",
+        urgent: "#dc3545",
+      };
+
+      const expectedResponses = {
+        low: "within 2-3 business days",
+        medium: "within 1-2 business days",
+        high: "within 24 hours",
+        urgent: "within 4-6 hours",
+      };
+
+      const html = template({
+        userName: supportData.name,
+        subject: supportData.subject,
+        category: supportData.category,
+        priority: supportData.priority.toUpperCase(),
+        priorityColor: priorityColors[supportData.priority] || "#6c757d",
+        message: supportData.message,
+        submittedAt: new Date(supportData.submittedAt).toLocaleString(),
+        ticketId: supportData.ticketId,
+        expectedResponse:
+          expectedResponses[supportData.priority] || "as soon as possible",
+        systemName: "UniTrack System",
+      });
+
+      const mailOptions = {
+        from: process.env.EMAIL_FROM,
+        to: userEmail,
+        subject: `Support Request Confirmation - Ticket #${supportData.ticketId}`,
+        html,
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log("Support confirmation email sent:", info.messageId);
+      return info;
+    } catch (error) {
+      console.error("Failed to send support confirmation email:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = EmailService;

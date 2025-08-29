@@ -95,15 +95,26 @@ router.get("/", auth, async (req, res) => {
 
     const total = await Course.countDocuments(query);
 
-    // Get student counts for each course
+    // Get student counts and active session info for each course
     const coursesWithCounts = await Promise.all(
       courses.map(async (course) => {
         const studentCount = await CourseStudent.countDocuments({
           course_id: course._id,
         });
+        
+        // Get active sessions for this course
+        const activeSessions = await Session.find({
+          course_id: course._id,
+          is_active: true,
+          expiry_ts: { $gt: new Date() }
+        }).select('_id session_code start_ts expiry_ts');
+        
         return {
           ...course.toObject(),
           student_count: studentCount,
+          active_sessions_count: activeSessions.length,
+          has_active_session: activeSessions.length > 0,
+          active_sessions: activeSessions
         };
       })
     );
