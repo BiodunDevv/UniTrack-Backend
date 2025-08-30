@@ -8,6 +8,8 @@ const EmailOtp = require("../models/EmailOtp");
 const EmailService = require("../services/emailService");
 const {
   generateOTP,
+  generateRandomPassword,
+  isValidEmail,
 } = require("../utils/helpers");
 const validate = require("../middleware/validation");
 const { strictLimiter, otpLimiter } = require("../middleware/rateLimiter");
@@ -604,11 +606,6 @@ router.put(
       .trim()
       .isLength({ min: 2, max: 100 })
       .withMessage("Name must be 2-100 characters"),
-    body("email")
-      .optional()
-      .isEmail()
-      .normalizeEmail()
-      .withMessage("Valid email required"),
     body("currentPassword")
       .optional()
       .isLength({ min: 1 })
@@ -632,7 +629,7 @@ router.put(
   auditLogger("profile_update"),
   async (req, res) => {
     try {
-      const { name, email, currentPassword, newPassword } = req.body;
+      const { name, currentPassword, newPassword } = req.body;
       const userId = req.user.id;
       const userRole = req.user.role;
 
@@ -645,52 +642,6 @@ router.put(
         return res.status(404).json({
           error: "User not found",
           details: ["Your account may have been deleted or deactivated"]
-        });
-      }
-
-      // Check if email change is requested
-      if (email && email !== user.email) {
-        // Check if new email is already in use
-        const existingUserWithEmail = await UserModel.findOne({ email, _id: { $ne: userId } });
-        if (existingUserWithEmail) {
-          return res.status(400).json({
-            error: "Email already in use",
-            details: ["The email address you entered is already registered to another account"]
-          });
-        }
-
-        // Generate OTP for email verification
-        const otp = generateOTP();
-        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-        // Store pending email change in user record
-        user.pending_email = email;
-        user.otp = otp;
-        user.otp_expires_at = otpExpiresAt;
-        user.otp_purpose = "email_change";
-
-        // Send OTP email
-        await emailService.sendOTP(email, otp, "email_change", {
-          currentEmail: user.email,
-          newEmail: email,
-          name: user.name
-        });
-
-        await user.save();
-
-        return res.json({
-          success: true,
-          message: "Email change OTP sent",
-          details: [
-            "An OTP has been sent to your new email address",
-            "Please verify the OTP using the /api/auth/verify-email-change endpoint",
-            "The OTP will expire in 10 minutes"
-          ],
-          data: {
-            pending_email: email,
-            current_email: user.email,
-            otp_expires_at: otpExpiresAt
-          }
         });
       }
 
@@ -832,171 +783,6 @@ router.get(
       res.status(500).json({
         error: "Internal server error",
         details: ["Failed to retrieve profile. Please try again later."]
-      });
-    }
-  }
-);
-
-// Verify email change OTP
-router.post(
-  "/verify-email-change",
-  auth,
-  [
-    body("otp")
-      .isLength({ min: 6, max: 6 })
-      .isNumeric()
-      .withMessage("OTP must be exactly 6 digits")
-  ],
-  validate,
-  auditLogger("email_change_verification"),
-  async (req, res) => {
-    try {
-      const { otp } = req.body;
-      const userId = req.user.id;
-      const userRole = req.user.role;
-
-      // Determine which model to use based on user role
-      const UserModel = userRole === "admin" ? Admin : Teacher;
-
-      // Find user with valid OTP for email change
-      const user = await UserModel.findOne({
-        _id: userId,
-        otp,
-        otp_purpose: "email_change",
-        otp_expires_at: { $gt: new Date() },
-        pending_email: { $exists: true, $ne: null }
-      });
-
-      if (!user) {
-        return res.status(400).json({
-          error: "Invalid or expired OTP",
-          details: [
-            "The OTP you entered is invalid or has expired",
-            "Please request a new email change if needed"
-          ]
-        });
-      }
-
-      // Update email and clear OTP fields
-      const oldEmail = user.email;
-      const newEmail = user.pending_email;
-      
-      user.email = newEmail;
-      user.pending_email = null;
-      user.otp = null;
-      user.otp_expires_at = null;
-      user.otp_purpose = null;
-      user.email_verified = true; // Mark new email as verified
-
-      await user.save();
-
-      // Send confirmation email to both old and new email
-      try {
-        await emailService.sendEmailChangeConfirmation(oldEmail, newEmail, user.name);
-        await emailService.sendEmailChangeConfirmation(newEmail, newEmail, user.name, true);
-      } catch (emailError) {
-        console.error("Error sending email change confirmation:", emailError);
-        // Don't fail the request if email sending fails
-      }
-
-      // Prepare response data
-      const responseData = {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role || userRole,
-        email_verified: user.email_verified,
-        updated_at: new Date()
-      };
-
-      // Add role-specific data
-      if (userRole === "admin") {
-        responseData.is_super_admin = user.is_super_admin;
-        responseData.status = user.status;
-        responseData.permissions = user.permissions;
-      }
-
-      res.json({
-        success: true,
-        message: "Email changed successfully",
-        details: [
-          "Your email address has been updated",
-          "Confirmation emails have been sent to both old and new email addresses"
-        ],
-        data: responseData,
-        email_change: {
-          old_email: oldEmail,
-          new_email: newEmail,
-          changed_at: new Date()
-        }
-      });
-
-    } catch (error) {
-      console.error("Email change verification error:", error);
-      res.status(500).json({
-        error: "Internal server error",
-        details: ["Failed to verify email change. Please try again later."]
-      });
-    }
-  }
-);
-
-// Cancel pending email change
-router.delete(
-  "/cancel-email-change",
-  auth,
-  auditLogger("email_change_cancelled"),
-  async (req, res) => {
-    try {
-      const userId = req.user.id;
-      const userRole = req.user.role;
-
-      // Determine which model to use based on user role
-      const UserModel = userRole === "admin" ? Admin : Teacher;
-
-      const user = await UserModel.findById(userId);
-      if (!user) {
-        return res.status(404).json({
-          error: "User not found",
-          details: ["Your account may have been deleted or deactivated"]
-        });
-      }
-
-      if (!user.pending_email) {
-        return res.status(400).json({
-          error: "No pending email change",
-          details: ["There is no pending email change to cancel"]
-        });
-      }
-
-      // Clear pending email change
-      const pendingEmail = user.pending_email;
-      user.pending_email = null;
-      user.otp = null;
-      user.otp_expires_at = null;
-      user.otp_purpose = null;
-
-      await user.save();
-
-      res.json({
-        success: true,
-        message: "Email change cancelled",
-        details: [
-          "The pending email change has been cancelled",
-          "Your current email address remains unchanged"
-        ],
-        data: {
-          current_email: user.email,
-          cancelled_email: pendingEmail,
-          cancelled_at: new Date()
-        }
-      });
-
-    } catch (error) {
-      console.error("Cancel email change error:", error);
-      res.status(500).json({
-        error: "Internal server error",
-        details: ["Failed to cancel email change. Please try again later."]
       });
     }
   }
