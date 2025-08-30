@@ -43,8 +43,15 @@ const teacherSchema = new mongoose.Schema(
         "email_verification",
         "password_reset",
         "login",
+        "email_change",
         null,
       ],
+      default: null,
+    },
+    pending_email: {
+      type: String,
+      lowercase: true,
+      trim: true,
       default: null,
     },
     created_at: {

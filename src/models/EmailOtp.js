@@ -15,7 +15,7 @@ const emailOtpSchema = new mongoose.Schema(
     purpose: {
       type: String,
       required: true,
-      enum: ["registration", "password_reset", "login"],
+      enum: ["registration", "password_reset", "login", "email_change"],
     },
     expires_at: {
       type: Date,

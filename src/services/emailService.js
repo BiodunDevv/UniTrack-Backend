@@ -369,6 +369,41 @@ class EmailService {
       throw error;
     }
   }
+
+  async sendEmailChangeConfirmation(email, newEmail, userName, isNewEmail = false) {
+    try {
+      const template = await this.loadTemplate("email-change-confirmation");
+      
+      const html = template({
+        userName,
+        newEmail,
+        oldEmail: isNewEmail ? null : email,
+        isNewEmail,
+        changeDate: new Date().toLocaleDateString(),
+        changeTime: new Date().toLocaleTimeString(),
+        systemName: "UniTrack Attendance System",
+        supportEmail: process.env.SUPPORT_EMAIL || "support@unitrack.com"
+      });
+
+      const subject = isNewEmail 
+        ? "Email Address Successfully Changed - UniTrack"
+        : "Email Address Change Notification - UniTrack";
+
+      const mailOptions = {
+        from: process.env.EMAIL_FROM,
+        to: email,
+        subject,
+        html,
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log(`Email change confirmation sent to ${email}:`, info.messageId);
+      return info;
+    } catch (error) {
+      console.error("Failed to send email change confirmation:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = EmailService;
