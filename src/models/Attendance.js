@@ -37,6 +37,31 @@ const attendanceSchema = new mongoose.Schema(
     accuracy: {
       type: Number,
     },
+    distance_from_location: {
+      type: Number,
+    },
+    // FingerprintJS integration fields
+    fpjs_visitor_id: {
+      type: String,
+      index: true,
+    },
+    fpjs_confidence: {
+      score: {
+        type: Number,
+        min: 0,
+        max: 1,
+      },
+      comment: String,
+    },
+    fpjs_components: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+    fpjs_version: {
+      type: String,
+    },
+    fpjs_timestamp: {
+      type: Date,
+    },
     status: {
       type: String,
       enum: ["present", "absent", "rejected", "manual_present"],

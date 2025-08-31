@@ -19,6 +19,11 @@ const deviceFingerprintSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // FingerprintJS specific fields
+    fpjs_visitor_id: {
+      type: String,
+      index: true,
+    },
     meta: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
