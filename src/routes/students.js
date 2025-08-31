@@ -32,18 +32,13 @@ router.post(
       .isEmail()
       .normalizeEmail()
       .withMessage("Valid email required"),
-    body("phone")
-      .optional()
-      .trim()
-      .isLength({ min: 10, max: 15 })
-      .withMessage("Invalid phone number"),
   ],
   validate,
   auditLogger("student_added_to_course"),
   async (req, res) => {
     try {
       const { courseId } = req.params;
-      const { matric_no, name, email, phone } = req.body;
+      const { matric_no, name, email } = req.body;
 
       // Verify course belongs to teacher
       const course = await Course.findOne({
@@ -65,14 +60,12 @@ router.post(
           matric_no: matric_no.toUpperCase(),
           name,
           email,
-          phone,
         });
         await student.save();
       } else {
         // Update student info if provided
         student.name = name;
         student.email = email;
-        if (phone) student.phone = phone;
         await student.save();
       }
 
@@ -105,14 +98,159 @@ router.post(
     } catch (error) {
       console.error("Add student error:", error);
       if (error.code === 11000) {
-        res
-          .status(400)
-          .json({
-            error: "Student with this matriculation number already exists",
-          });
+        res.status(400).json({
+          error: "Student with this matriculation number already exists",
+        });
       } else {
         res.status(500).json({ error: "Internal server error" });
       }
+    }
+  }
+);
+
+// Bulk add students to course
+router.post(
+  "/:courseId/students/bulk",
+  auth,
+  [
+    param("courseId").isMongoId().withMessage("Valid course ID required"),
+    body("students")
+      .isArray({ min: 1, max: 100 })
+      .withMessage("Students array required (1-100 students)"),
+    body("students.*.matric_no").custom((value) => {
+      if (!isValidMatricNo(value)) {
+        throw new Error("Invalid matriculation number format");
+      }
+      return true;
+    }),
+    body("students.*.name")
+      .trim()
+      .isLength({ min: 2, max: 100 })
+      .withMessage("Name must be 2-100 characters"),
+    body("students.*.email")
+      .isEmail()
+      .normalizeEmail()
+      .withMessage("Valid email required"),
+    body("students.*.level")
+      .isInt({ min: 100, max: 600 })
+      .withMessage("Level must be between 100-600"),
+  ],
+  validate,
+  auditLogger("bulk_students_added_to_course"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { students } = req.body;
+
+      // Verify course belongs to teacher
+      const course = await Course.findOne({
+        _id: courseId,
+        teacher_id: req.teacher._id,
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      const results = {
+        successful: [],
+        failed: [],
+        skipped: [],
+      };
+
+      // Process each student
+      for (const studentData of students) {
+        try {
+          const { matric_no, name, email, level } = studentData;
+          const matricNo = matric_no.toUpperCase();
+
+          // Check if student already exists, create if not
+          let student = await Student.findOne({ matric_no: matricNo });
+
+          if (!student) {
+            student = new Student({
+              matric_no: matricNo,
+              name,
+              email,
+              level,
+            });
+            await student.save();
+          } else {
+            // Update student info if provided
+            student.name = name;
+            student.email = email;
+            if (level) student.level = level;
+            await student.save();
+          }
+
+          // Check if student is already enrolled in course
+          const existingEnrollment = await CourseStudent.findOne({
+            course_id: courseId,
+            student_id: student._id,
+          });
+
+          if (existingEnrollment) {
+            results.skipped.push({
+              matric_no: matricNo,
+              name,
+              reason: "Already enrolled in course",
+            });
+            continue;
+          }
+
+          // Add student to course
+          const courseStudent = new CourseStudent({
+            course_id: courseId,
+            student_id: student._id,
+            added_by: req.teacher._id,
+          });
+
+          await courseStudent.save();
+          await courseStudent.populate(["student_id"]);
+
+          results.successful.push({
+            matric_no: matricNo,
+            name,
+            email,
+            student_id: student._id,
+            enrollment_id: courseStudent._id,
+          });
+        } catch (error) {
+          console.error(
+            `Error processing student ${studentData.matric_no}:`,
+            error
+          );
+          results.failed.push({
+            matric_no: studentData.matric_no,
+            name: studentData.name,
+            reason: error.message || "Processing error",
+          });
+        }
+      }
+
+      const totalProcessed = students.length;
+      const successCount = results.successful.length;
+      const failedCount = results.failed.length;
+      const skippedCount = results.skipped.length;
+
+      res.status(201).json({
+        message: "Bulk student enrollment completed",
+        summary: {
+          total_processed: totalProcessed,
+          successful: successCount,
+          failed: failedCount,
+          skipped: skippedCount,
+        },
+        results,
+        course: {
+          id: course._id,
+          title: course.title,
+          course_code: course.course_code,
+        },
+      });
+    } catch (error) {
+      console.error("Bulk add students error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   }
 );
@@ -284,7 +422,7 @@ router.patch(
       } else {
         // Create new manual attendance record with unique device fingerprint
         const uniqueDeviceFingerprint = `manual_entry_${studentId}_${sessionId}_${Date.now()}`;
-        
+
         attendance = new Attendance({
           session_id: sessionId,
           course_id: courseId,
@@ -301,8 +439,8 @@ router.patch(
             platform: "Manual Entry",
             browser: "Teacher Dashboard",
             user_agent: "Manual attendance marking by teacher",
-            manual_entry: true
-          }
+            manual_entry: true,
+          },
         });
         await attendance.save();
       }
@@ -315,31 +453,37 @@ router.patch(
       });
     } catch (error) {
       console.error("Manual attendance error:", error);
-      
+
       // Handle duplicate key error specifically
-      if (error.code === 11000 && error.keyPattern && error.keyPattern.device_fingerprint) {
+      if (
+        error.code === 11000 &&
+        error.keyPattern &&
+        error.keyPattern.device_fingerprint
+      ) {
         return res.status(400).json({
           error: "Attendance record conflict",
           details: [
             "There was a conflict with the attendance record.",
             "This might be due to a duplicate manual entry.",
-            "Please refresh the page and try again."
-          ]
+            "Please refresh the page and try again.",
+          ],
         });
       }
-      
+
       // Handle validation errors
       if (error.name === "ValidationError") {
-        const validationErrors = Object.values(error.errors).map(err => err.message);
+        const validationErrors = Object.values(error.errors).map(
+          (err) => err.message
+        );
         return res.status(400).json({
           error: "Validation failed",
-          details: validationErrors
+          details: validationErrors,
         });
       }
-      
-      res.status(500).json({ 
+
+      res.status(500).json({
         error: "Internal server error",
-        details: ["Failed to mark attendance. Please try again later."]
+        details: ["Failed to mark attendance. Please try again later."],
       });
     }
   }
