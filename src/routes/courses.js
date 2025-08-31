@@ -101,20 +101,20 @@ router.get("/", auth, async (req, res) => {
         const studentCount = await CourseStudent.countDocuments({
           course_id: course._id,
         });
-        
+
         // Get active sessions for this course
         const activeSessions = await Session.find({
           course_id: course._id,
           is_active: true,
-          expiry_ts: { $gt: new Date() }
-        }).select('_id session_code start_ts expiry_ts');
-        
+          expiry_ts: { $gt: new Date() },
+        }).select("_id session_code start_ts expiry_ts");
+
         return {
           ...course.toObject(),
           student_count: studentCount,
           active_sessions_count: activeSessions.length,
           has_active_session: activeSessions.length > 0,
-          active_sessions: activeSessions
+          active_sessions: activeSessions,
         };
       })
     );
@@ -498,6 +498,301 @@ router.post(
       });
     } catch (error) {
       console.error("Copy students error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Get comprehensive attendance report for all sessions in a course
+router.get(
+  "/:courseId/attendance-report",
+  auth,
+  [param("courseId").isMongoId().withMessage("Valid course ID required")],
+  validate,
+  auditLogger("course_attendance_report_generated"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { format } = req.query; // optional: 'summary' or 'detailed' (default: detailed)
+
+      // Verify course belongs to teacher
+      const course = await Course.findOne({
+        _id: courseId,
+        teacher_id: req.teacher._id,
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Get all sessions for this course
+      const sessions = await Session.find({ course_id: courseId })
+        .sort({ created_at: 1 })
+        .lean();
+
+      if (sessions.length === 0) {
+        return res.json({
+          message: "No sessions found for this course",
+          course: {
+            id: course._id,
+            title: course.title,
+            course_code: course.course_code,
+            level: course.level,
+          },
+          summary: {
+            total_sessions: 0,
+            total_students: 0,
+            students_below_75_percent: [],
+          },
+        });
+      }
+
+      // Get all enrolled students
+      const enrolledStudents = await CourseStudent.find({
+        course_id: courseId,
+      })
+        .populate("student_id", "name email matric_no level")
+        .sort({ "student_id.name": 1 })
+        .lean();
+
+      // Get all attendance records for all sessions
+      const sessionIds = sessions.map((session) => session._id);
+      const allAttendanceRecords = await Attendance.find({
+        session_id: { $in: sessionIds },
+      })
+        .populate("student_id", "name email matric_no")
+        .lean();
+
+      // Create attendance map for quick lookup
+      const attendanceMap = {};
+      allAttendanceRecords.forEach((record) => {
+        const sessionId = record.session_id.toString();
+        const studentId = record.student_id._id.toString();
+
+        if (!attendanceMap[studentId]) {
+          attendanceMap[studentId] = {};
+        }
+        attendanceMap[studentId][sessionId] = record;
+      });
+
+      // Calculate statistics for each student
+      const studentReports = enrolledStudents.map((enrollment) => {
+        const student = enrollment.student_id;
+        const studentId = student._id.toString();
+
+        let totalSessions = sessions.length;
+        let attendedSessions = 0;
+        let presentCount = 0;
+        let absentCount = 0;
+        let sessionDetails = [];
+
+        sessions.forEach((session) => {
+          const sessionId = session._id.toString();
+          const attendance =
+            attendanceMap[studentId] && attendanceMap[studentId][sessionId];
+
+          if (attendance) {
+            const isPresent = ["present", "manual_present"].includes(
+              attendance.status
+            );
+            if (isPresent) {
+              attendedSessions++;
+              presentCount++;
+            }
+
+            sessionDetails.push({
+              session_id: session._id,
+              session_code: session.session_code,
+              date: session.created_at,
+              status: attendance.status,
+              submitted_at: attendance.submitted_at,
+              distance_m: attendance.distance_from_session_m,
+            });
+          } else {
+            absentCount++;
+            sessionDetails.push({
+              session_id: session._id,
+              session_code: session.session_code,
+              date: session.created_at,
+              status: "absent",
+              submitted_at: null,
+              distance_m: null,
+            });
+          }
+        });
+
+        const attendanceRate =
+          totalSessions > 0 ? (attendedSessions / totalSessions) * 100 : 0;
+        const meetsRequirement = attendanceRate >= 75;
+
+        return {
+          student: {
+            id: student._id,
+            name: student.name,
+            email: student.email,
+            matric_no: student.matric_no,
+            level: student.level,
+          },
+          statistics: {
+            total_sessions: totalSessions,
+            attended_sessions: attendedSessions,
+            missed_sessions: absentCount,
+            attendance_rate: Math.round(attendanceRate * 100) / 100,
+            meets_75_percent_requirement: meetsRequirement,
+            sessions_needed_for_75_percent: meetsRequirement
+              ? 0
+              : Math.ceil(totalSessions * 0.75) - attendedSessions,
+          },
+          session_details: format === "summary" ? [] : sessionDetails,
+        };
+      });
+
+      // Identify students below 75% attendance
+      const studentsBelow75Percent = studentReports.filter(
+        (report) => !report.statistics.meets_75_percent_requirement
+      );
+
+      // Calculate overall course statistics
+      const totalStudents = enrolledStudents.length;
+      const totalSessions = sessions.length;
+      const totalPossibleAttendance = totalStudents * totalSessions;
+      const totalActualAttendance = allAttendanceRecords.filter((record) =>
+        ["present", "manual_present"].includes(record.status)
+      ).length;
+
+      const overallAttendanceRate =
+        totalPossibleAttendance > 0
+          ? (totalActualAttendance / totalPossibleAttendance) * 100
+          : 0;
+
+      // Session-wise statistics
+      const sessionStatistics = sessions.map((session) => {
+        const sessionAttendance = allAttendanceRecords.filter(
+          (record) => record.session_id.toString() === session._id.toString()
+        );
+
+        const presentCount = sessionAttendance.filter((record) =>
+          ["present", "manual_present"].includes(record.status)
+        ).length;
+
+        const sessionRate =
+          totalStudents > 0 ? (presentCount / totalStudents) * 100 : 0;
+
+        return {
+          session_id: session._id,
+          session_code: session.session_code,
+          date: session.created_at,
+          start_time: session.start_ts,
+          end_time: session.expiry_ts,
+          total_submissions: sessionAttendance.length,
+          present_count: presentCount,
+          absent_count: totalStudents - sessionAttendance.length,
+          attendance_rate: Math.round(sessionRate * 100) / 100,
+          location: {
+            lat: session.lat,
+            lng: session.lng,
+            radius_m: session.radius_m,
+          },
+        };
+      });
+
+      // Performance insights
+      const insights = {
+        best_attended_session: sessionStatistics.reduce(
+          (best, current) =>
+            current.attendance_rate > best.attendance_rate ? current : best,
+          sessionStatistics[0]
+        ),
+        worst_attended_session: sessionStatistics.reduce(
+          (worst, current) =>
+            current.attendance_rate < worst.attendance_rate ? current : worst,
+          sessionStatistics[0]
+        ),
+        average_session_attendance:
+          sessionStatistics.length > 0
+            ? Math.round(
+                (sessionStatistics.reduce(
+                  (sum, session) => sum + session.attendance_rate,
+                  0
+                ) /
+                  sessionStatistics.length) *
+                  100
+              ) / 100
+            : 0,
+        students_with_perfect_attendance: studentReports.filter(
+          (report) => report.statistics.attendance_rate === 100
+        ).length,
+        students_at_risk: studentsBelow75Percent.length,
+      };
+
+      // Risk analysis
+      const riskLevels = {
+        critical: studentsBelow75Percent.filter(
+          (s) => s.statistics.attendance_rate < 50
+        ).length,
+        high: studentsBelow75Percent.filter(
+          (s) =>
+            s.statistics.attendance_rate >= 50 &&
+            s.statistics.attendance_rate < 65
+        ).length,
+        medium: studentsBelow75Percent.filter(
+          (s) =>
+            s.statistics.attendance_rate >= 65 &&
+            s.statistics.attendance_rate < 75
+        ).length,
+      };
+
+      res.json({
+        message: "Course attendance report generated successfully",
+        course: {
+          id: course._id,
+          title: course.title,
+          course_code: course.course_code,
+          level: course.level,
+          created_at: course.created_at,
+        },
+        summary: {
+          total_sessions: totalSessions,
+          total_students: totalStudents,
+          overall_attendance_rate:
+            Math.round(overallAttendanceRate * 100) / 100,
+          students_meeting_75_percent:
+            totalStudents - studentsBelow75Percent.length,
+          students_below_75_percent: studentsBelow75Percent.length,
+          perfect_attendance_students:
+            insights.students_with_perfect_attendance,
+        },
+        risk_analysis: {
+          critical_risk: riskLevels.critical, // < 50%
+          high_risk: riskLevels.high, // 50-64%
+          medium_risk: riskLevels.medium, // 65-74%
+          total_at_risk: studentsBelow75Percent.length,
+        },
+        insights,
+        sessions_overview: sessionStatistics,
+        students_below_75_percent: studentsBelow75Percent.map((report) => ({
+          ...report.student,
+          attendance_rate: report.statistics.attendance_rate,
+          sessions_attended: report.statistics.attended_sessions,
+          sessions_missed: report.statistics.missed_sessions,
+          sessions_needed_for_75_percent:
+            report.statistics.sessions_needed_for_75_percent,
+          risk_level:
+            report.statistics.attendance_rate < 50
+              ? "critical"
+              : report.statistics.attendance_rate < 65
+              ? "high"
+              : "medium",
+        })),
+        all_students: format === "summary" ? [] : studentReports,
+        generated_at: new Date(),
+        report_parameters: {
+          minimum_attendance_requirement: 75,
+          format: format || "detailed",
+        },
+      });
+    } catch (error) {
+      console.error("Generate attendance report error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }
