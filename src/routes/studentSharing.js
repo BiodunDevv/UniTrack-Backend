@@ -1,5 +1,6 @@
 const express = require("express");
 const { body, param, query } = require("express-validator");
+const mongoose = require("mongoose");
 const StudentShareRequest = require("../models/StudentShareRequest");
 const Teacher = require("../models/Teacher");
 const Course = require("../models/Course");
@@ -31,8 +32,102 @@ router.get("/teachers", auth, async (req, res) => {
   }
 });
 
-// Get teacher's courses with student counts
-router.get("/my-courses", auth, async (req, res) => {
+// Get another teacher's courses with details (for student sharing)
+router.get(
+  "/my-courses",
+  auth,
+  [
+    query("teacher_id")
+      .optional()
+      .isMongoId()
+      .withMessage("Valid teacher ID required"),
+  ],
+  validate,
+  async (req, res) => {
+    try {
+      const { teacher_id } = req.query;
+
+      // If teacher_id is provided, get that teacher's courses, otherwise get own courses
+      const targetTeacherId = teacher_id || req.teacher._id;
+
+      // If requesting another teacher's courses, verify the teacher exists
+      if (teacher_id && teacher_id !== req.teacher._id.toString()) {
+        const targetTeacher = await Teacher.findById(teacher_id).select(
+          "name email"
+        );
+        if (!targetTeacher) {
+          return res.status(404).json({ error: "Teacher not found" });
+        }
+      }
+
+      const courses = await Course.aggregate([
+        {
+          $match: { teacher_id: new mongoose.Types.ObjectId(targetTeacherId) },
+        },
+        {
+          $lookup: {
+            from: "coursestudents",
+            localField: "_id",
+            foreignField: "course_id",
+            as: "enrollments",
+          },
+        },
+        {
+          $lookup: {
+            from: "teachers",
+            localField: "teacher_id",
+            foreignField: "_id",
+            as: "teacher_info",
+          },
+        },
+        {
+          $addFields: {
+            student_count: { $size: "$enrollments" },
+            teacher: { $arrayElemAt: ["$teacher_info", 0] },
+          },
+        },
+        {
+          $project: {
+            course_code: 1,
+            title: 1,
+            level: 1,
+            semester: 1,
+            academic_year: 1,
+            student_count: 1,
+            created_at: 1,
+            "teacher.name": 1,
+            "teacher.email": 1,
+            "teacher._id": 1,
+          },
+        },
+        { $sort: { created_at: -1 } },
+      ]);
+
+      // Get teacher info for response
+      const teacherInfo = teacher_id
+        ? await Teacher.findById(targetTeacherId).select("name email")
+        : {
+            name: req.teacher.name,
+            email: req.teacher.email,
+            _id: req.teacher._id,
+          };
+
+      res.json({
+        courses,
+        total: courses.length,
+        teacher: teacherInfo,
+        is_own_courses:
+          !teacher_id || teacher_id === req.teacher._id.toString(),
+      });
+    } catch (error) {
+      console.error("Get courses error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Get teacher's courses with student counts (legacy - keeping for backward compatibility)
+router.get("/my-courses-legacy", auth, async (req, res) => {
   try {
     const courses = await Course.aggregate([
       { $match: { teacher_id: req.teacher._id } },
