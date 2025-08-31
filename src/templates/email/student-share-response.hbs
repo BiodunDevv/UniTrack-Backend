@@ -8,6 +8,7 @@
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background: #f3f4f6;
         padding: 20px;
+        color: #111827;
       }
       .email-wrapper {
         max-width: 600px;
@@ -119,6 +120,54 @@
         margin-top: 10px;
         font-size: 0.75rem;
         color: #9ca3af;
+      }
+
+      /* Dark mode */
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #111827;
+          color: #f9fafb;
+        }
+        .email-wrapper {
+          background: #1f2937;
+          border: 1px solid #374151;
+        }
+        .greeting { color: #f3f4f6; }
+        .message { color: #d1d5db; }
+        .details {
+          background: #111827;
+          border-left: 4px solid #374151;
+        }
+        .detail-label { color: #e5e7eb; }
+        .detail-value { color: #9ca3af; }
+        .response-message.approved {
+          background: #064e3b;
+          color: #d1fae5;
+          border-left-color: #10b981;
+        }
+        .response-message.declined {
+          background: #7f1d1d;
+          color: #fee2e2;
+          border-left-color: #ef4444;
+        }
+        .next-steps {
+          background: #1e3a8a;
+          color: #bfdbfe;
+          border-left-color: #3b82f6;
+        }
+        .footer {
+          background: #111827;
+          color: #9ca3af;
+        }
+        .timestamp { color: #6b7280; }
+        .status-badge.approved {
+          background: #064e3b;
+          color: #34d399;
+        }
+        .status-badge.declined {
+          background: #7f1d1d;
+          color: #fca5a5;
+        }
       }
     </style>
   </head>

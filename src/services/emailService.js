@@ -15,6 +15,18 @@ class EmailService {
       },
     });
 
+    // Register Handlebars helpers
+    handlebars.registerHelper("eq", function (a, b) {
+      return a === b;
+    });
+
+    handlebars.registerHelper("if_gt", function (a, b, options) {
+      if (a > b) {
+        return options.fn(this);
+      }
+      return options.inverse(this);
+    });
+
     // Test connection
     this.transporter.verify((error, success) => {
       if (error) {
@@ -270,11 +282,6 @@ class EmailService {
         high: "#fd7e14",
         urgent: "#dc3545",
       };
-
-      // Register Handlebars helper for equality check
-      handlebars.registerHelper("eq", function (a, b) {
-        return a === b;
-      });
 
       const html = template({
         userName: supportData.name,

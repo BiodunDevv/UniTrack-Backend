@@ -616,4 +616,39 @@ router.patch(
   }
 );
 
+// Get request details by ID
+router.get(
+  "/:requestId/details",
+  auth,
+  [param("requestId").isMongoId().withMessage("Valid request ID required")],
+  validate,
+  async (req, res) => {
+    try {
+      const { requestId } = req.params;
+
+      const request = await StudentShareRequest.findOne({
+        _id: requestId,
+        $or: [
+          { requester_id: req.teacher._id },
+          { target_teacher_id: req.teacher._id },
+        ],
+      })
+        .populate("requester_id", "name email")
+        .populate("target_teacher_id", "name email")
+        .populate("course_id", "course_code title")
+        .populate("target_course_id", "course_code title")
+        .populate("student_ids", "name student_id level");
+
+      if (!request) {
+        return res.status(404).json({ error: "Request not found" });
+      }
+
+      res.json({ request });
+    } catch (error) {
+      console.error("Get request details error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
 module.exports = router;
