@@ -305,6 +305,185 @@ router.get(
   }
 );
 
+// Delete all students from course
+router.delete(
+  "/:courseId/students/all",
+  auth,
+  [param("courseId").isMongoId().withMessage("Valid course ID required")],
+  validate,
+  auditLogger("all_students_removed_from_course"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+
+      // Verify course belongs to teacher
+      const course = await Course.findOne({
+        _id: courseId,
+        teacher_id: req.teacher._id,
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Get all enrolled students before deletion for the response
+      const enrolledStudents = await CourseStudent.find({
+        course_id: courseId,
+      })
+        .populate("student_id", "name email matric_no")
+        .lean();
+
+      // Delete all course enrollments
+      const deleteResult = await CourseStudent.deleteMany({
+        course_id: courseId,
+      });
+
+      // Also delete any attendance records for sessions in this course
+      const courseSessions = await Session.find({ course_id: courseId }).select("_id");
+      const sessionIds = courseSessions.map(session => session._id);
+      
+      if (sessionIds.length > 0) {
+        await Attendance.deleteMany({ session_id: { $in: sessionIds } });
+      }
+
+      res.json({
+        message: "All students removed from course successfully",
+        summary: {
+          total_students_removed: deleteResult.deletedCount,
+          course: {
+            id: course._id,
+            title: course.title,
+            course_code: course.course_code,
+          },
+          deleted_students: enrolledStudents.map(enrollment => ({
+            id: enrollment.student_id._id,
+            name: enrollment.student_id.name,
+            email: enrollment.student_id.email,
+            matric_no: enrollment.student_id.matric_no,
+          })),
+          attendance_records_cleaned: sessionIds.length > 0,
+        },
+      });
+    } catch (error) {
+      console.error("Remove all students error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Bulk delete specific students from course
+router.delete(
+  "/:courseId/students/bulk",
+  auth,
+  [
+    param("courseId").isMongoId().withMessage("Valid course ID required"),
+    body("student_ids")
+      .isArray({ min: 1, max: 100 })
+      .withMessage("Student IDs array required (1-100 students)"),
+    body("student_ids.*")
+      .isMongoId()
+      .withMessage("Valid student ID required"),
+  ],
+  validate,
+  auditLogger("bulk_students_removed_from_course"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { student_ids } = req.body;
+
+      // Verify course belongs to teacher
+      const course = await Course.findOne({
+        _id: courseId,
+        teacher_id: req.teacher._id,
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      const results = {
+        successful: [],
+        not_found: [],
+        failed: [],
+      };
+
+      // Process each student ID
+      for (const studentId of student_ids) {
+        try {
+          // Find the enrollment
+          const enrollment = await CourseStudent.findOne({
+            course_id: courseId,
+            student_id: studentId,
+          }).populate("student_id", "name email matric_no");
+
+          if (!enrollment) {
+            results.not_found.push({
+              student_id: studentId,
+              reason: "Student not enrolled in this course",
+            });
+            continue;
+          }
+
+          // Delete the enrollment
+          await CourseStudent.deleteOne({
+            course_id: courseId,
+            student_id: studentId,
+          });
+
+          // Delete attendance records for this student in this course's sessions
+          const courseSessions = await Session.find({ course_id: courseId }).select("_id");
+          const sessionIds = courseSessions.map(session => session._id);
+          
+          if (sessionIds.length > 0) {
+            await Attendance.deleteMany({
+              session_id: { $in: sessionIds },
+              student_id: studentId,
+            });
+          }
+
+          results.successful.push({
+            student_id: studentId,
+            name: enrollment.student_id.name,
+            email: enrollment.student_id.email,
+            matric_no: enrollment.student_id.matric_no,
+            attendance_records_cleaned: sessionIds.length > 0,
+          });
+        } catch (error) {
+          console.error(`Error removing student ${studentId}:`, error);
+          results.failed.push({
+            student_id: studentId,
+            reason: error.message || "Processing error",
+          });
+        }
+      }
+
+      const totalProcessed = student_ids.length;
+      const successCount = results.successful.length;
+      const notFoundCount = results.not_found.length;
+      const failedCount = results.failed.length;
+
+      res.json({
+        message: "Bulk student removal completed",
+        summary: {
+          total_processed: totalProcessed,
+          successful: successCount,
+          not_found: notFoundCount,
+          failed: failedCount,
+          course: {
+            id: course._id,
+            title: course.title,
+            course_code: course.course_code,
+          },
+        },
+        results,
+      });
+    } catch (error) {
+      console.error("Bulk remove students error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
 // Remove student from course
 router.delete(
   "/:courseId/students/:studentId",
@@ -344,6 +523,119 @@ router.delete(
       res.json({ message: "Student removed from course successfully" });
     } catch (error) {
       console.error("Remove student error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Remove student from course
+router.delete(
+  "/:courseId/students/bulk",
+  auth,
+  [
+    param("courseId").isMongoId().withMessage("Valid course ID required"),
+    body("student_ids")
+      .isArray({ min: 1, max: 100 })
+      .withMessage("Student IDs array required (1-100 students)"),
+    body("student_ids.*")
+      .isMongoId()
+      .withMessage("Valid student ID required"),
+  ],
+  validate,
+  auditLogger("bulk_students_removed_from_course"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { student_ids } = req.body;
+
+      // Verify course belongs to teacher
+      const course = await Course.findOne({
+        _id: courseId,
+        teacher_id: req.teacher._id,
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      const results = {
+        successful: [],
+        not_found: [],
+        failed: [],
+      };
+
+      // Process each student ID
+      for (const studentId of student_ids) {
+        try {
+          // Find the enrollment
+          const enrollment = await CourseStudent.findOne({
+            course_id: courseId,
+            student_id: studentId,
+          }).populate("student_id", "name email matric_no");
+
+          if (!enrollment) {
+            results.not_found.push({
+              student_id: studentId,
+              reason: "Student not enrolled in this course",
+            });
+            continue;
+          }
+
+          // Delete the enrollment
+          await CourseStudent.deleteOne({
+            course_id: courseId,
+            student_id: studentId,
+          });
+
+          // Delete attendance records for this student in this course's sessions
+          const courseSessions = await Session.find({ course_id: courseId }).select("_id");
+          const sessionIds = courseSessions.map(session => session._id);
+          
+          if (sessionIds.length > 0) {
+            await Attendance.deleteMany({
+              session_id: { $in: sessionIds },
+              student_id: studentId,
+            });
+          }
+
+          results.successful.push({
+            student_id: studentId,
+            name: enrollment.student_id.name,
+            email: enrollment.student_id.email,
+            matric_no: enrollment.student_id.matric_no,
+            attendance_records_cleaned: sessionIds.length > 0,
+          });
+        } catch (error) {
+          console.error(`Error removing student ${studentId}:`, error);
+          results.failed.push({
+            student_id: studentId,
+            reason: error.message || "Processing error",
+          });
+        }
+      }
+
+      const totalProcessed = student_ids.length;
+      const successCount = results.successful.length;
+      const notFoundCount = results.not_found.length;
+      const failedCount = results.failed.length;
+
+      res.json({
+        message: "Bulk student removal completed",
+        summary: {
+          total_processed: totalProcessed,
+          successful: successCount,
+          not_found: notFoundCount,
+          failed: failedCount,
+          course: {
+            id: course._id,
+            title: course.title,
+            course_code: course.course_code,
+          },
+        },
+        results,
+      });
+    } catch (error) {
+      console.error("Bulk remove students error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }
