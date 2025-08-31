@@ -32,13 +32,16 @@ router.post(
       .isEmail()
       .normalizeEmail()
       .withMessage("Valid email required"),
+    body("level")
+      .isInt({ min: 100, max: 600 })
+      .withMessage("Level must be between 100-600"),
   ],
   validate,
   auditLogger("student_added_to_course"),
   async (req, res) => {
     try {
       const { courseId } = req.params;
-      const { matric_no, name, email } = req.body;
+      const { matric_no, name, email, level } = req.body;
 
       // Verify course belongs to teacher
       const course = await Course.findOne({
@@ -60,12 +63,14 @@ router.post(
           matric_no: matric_no.toUpperCase(),
           name,
           email,
+          level,
         });
         await student.save();
       } else {
         // Update student info if provided
         student.name = name;
         student.email = email;
+        student.level = level;
         await student.save();
       }
 
@@ -339,9 +344,11 @@ router.delete(
       });
 
       // Also delete any attendance records for sessions in this course
-      const courseSessions = await Session.find({ course_id: courseId }).select("_id");
-      const sessionIds = courseSessions.map(session => session._id);
-      
+      const courseSessions = await Session.find({ course_id: courseId }).select(
+        "_id"
+      );
+      const sessionIds = courseSessions.map((session) => session._id);
+
       if (sessionIds.length > 0) {
         await Attendance.deleteMany({ session_id: { $in: sessionIds } });
       }
@@ -355,7 +362,7 @@ router.delete(
             title: course.title,
             course_code: course.course_code,
           },
-          deleted_students: enrolledStudents.map(enrollment => ({
+          deleted_students: enrolledStudents.map((enrollment) => ({
             id: enrollment.student_id._id,
             name: enrollment.student_id.name,
             email: enrollment.student_id.email,
@@ -380,9 +387,7 @@ router.delete(
     body("student_ids")
       .isArray({ min: 1, max: 100 })
       .withMessage("Student IDs array required (1-100 students)"),
-    body("student_ids.*")
-      .isMongoId()
-      .withMessage("Valid student ID required"),
+    body("student_ids.*").isMongoId().withMessage("Valid student ID required"),
   ],
   validate,
   auditLogger("bulk_students_removed_from_course"),
@@ -431,9 +436,11 @@ router.delete(
           });
 
           // Delete attendance records for this student in this course's sessions
-          const courseSessions = await Session.find({ course_id: courseId }).select("_id");
-          const sessionIds = courseSessions.map(session => session._id);
-          
+          const courseSessions = await Session.find({
+            course_id: courseId,
+          }).select("_id");
+          const sessionIds = courseSessions.map((session) => session._id);
+
           if (sessionIds.length > 0) {
             await Attendance.deleteMany({
               session_id: { $in: sessionIds },
@@ -537,9 +544,7 @@ router.delete(
     body("student_ids")
       .isArray({ min: 1, max: 100 })
       .withMessage("Student IDs array required (1-100 students)"),
-    body("student_ids.*")
-      .isMongoId()
-      .withMessage("Valid student ID required"),
+    body("student_ids.*").isMongoId().withMessage("Valid student ID required"),
   ],
   validate,
   auditLogger("bulk_students_removed_from_course"),
@@ -588,9 +593,11 @@ router.delete(
           });
 
           // Delete attendance records for this student in this course's sessions
-          const courseSessions = await Session.find({ course_id: courseId }).select("_id");
-          const sessionIds = courseSessions.map(session => session._id);
-          
+          const courseSessions = await Session.find({
+            course_id: courseId,
+          }).select("_id");
+          const sessionIds = courseSessions.map((session) => session._id);
+
           if (sessionIds.length > 0) {
             await Attendance.deleteMany({
               session_id: { $in: sessionIds },
