@@ -27,12 +27,14 @@ async function generateCourseAttendanceData(courseId) {
     }
 
     // Get all sessions for this course
-    const sessions = await Session.find({ course_id: courseId })
-      .sort({ start_ts: 1 });
+    const sessions = await Session.find({ course_id: courseId }).sort({
+      start_ts: 1,
+    });
 
     // Get all students enrolled in this course
-    const enrolledStudents = await CourseStudent.find({ course_id: courseId })
-      .populate("student_id", "matric_no name email level");
+    const enrolledStudents = await CourseStudent.find({
+      course_id: courseId,
+    }).populate("student_id", "matric_no name email level");
 
     // Get all attendance records for this course
     const attendanceRecords = await Attendance.find({ course_id: courseId })
@@ -44,7 +46,7 @@ async function generateCourseAttendanceData(courseId) {
     const sessionStats = {};
 
     // Initialize student stats
-    enrolledStudents.forEach(enrollment => {
+    enrolledStudents.forEach((enrollment) => {
       const student = enrollment.student_id;
       studentStats[student._id] = {
         id: student._id,
@@ -56,24 +58,24 @@ async function generateCourseAttendanceData(courseId) {
         sessions_missed: 0,
         total_sessions: sessions.length,
         attendance_rate: 0,
-        risk_level: "low"
+        risk_level: "low",
       };
     });
 
     // Initialize session stats
-    sessions.forEach(session => {
+    sessions.forEach((session) => {
       sessionStats[session._id] = {
         session_code: session.session_code,
         start_ts: session.start_ts,
         present_count: 0,
         absent_count: 0,
         total_enrolled: enrolledStudents.length,
-        attendance_rate: 0
+        attendance_rate: 0,
       };
     });
 
     // Process attendance records
-    attendanceRecords.forEach(record => {
+    attendanceRecords.forEach((record) => {
       const studentId = record.student_id._id;
       const sessionId = record.session_id._id;
 
@@ -89,11 +91,14 @@ async function generateCourseAttendanceData(courseId) {
     });
 
     // Calculate missing sessions for students who didn't submit attendance
-    Object.values(studentStats).forEach(student => {
-      const totalSubmissions = student.sessions_attended + student.sessions_missed;
+    Object.values(studentStats).forEach((student) => {
+      const totalSubmissions =
+        student.sessions_attended + student.sessions_missed;
       student.sessions_missed = sessions.length - student.sessions_attended;
-      student.attendance_rate = sessions.length > 0 ? 
-        (student.sessions_attended / sessions.length) * 100 : 0;
+      student.attendance_rate =
+        sessions.length > 0
+          ? (student.sessions_attended / sessions.length) * 100
+          : 0;
 
       // Determine risk level
       if (student.attendance_rate < 50) {
@@ -106,88 +111,119 @@ async function generateCourseAttendanceData(courseId) {
         student.risk_level = "low";
       }
 
-      student.sessions_needed_for_75_percent = Math.max(0, 
-        Math.ceil(sessions.length * 0.75) - student.sessions_attended);
+      student.sessions_needed_for_75_percent = Math.max(
+        0,
+        Math.ceil(sessions.length * 0.75) - student.sessions_attended
+      );
     });
 
     // Calculate session attendance rates
-    Object.values(sessionStats).forEach(session => {
-      session.attendance_rate = session.total_enrolled > 0 ? 
-        (session.present_count / session.total_enrolled) * 100 : 0;
+    Object.values(sessionStats).forEach((session) => {
+      session.attendance_rate =
+        session.total_enrolled > 0
+          ? (session.present_count / session.total_enrolled) * 100
+          : 0;
     });
 
     // Calculate overall statistics
     const totalStudents = enrolledStudents.length;
     const totalSessions = sessions.length;
-    const studentsBelow75 = Object.values(studentStats).filter(s => s.attendance_rate < 75);
+    const studentsBelow75 = Object.values(studentStats).filter(
+      (s) => s.attendance_rate < 75
+    );
     const studentsMeeting75 = totalStudents - studentsBelow75.length;
-    const studentsWithPerfectAttendance = Object.values(studentStats)
-      .filter(s => s.attendance_rate === 100).length;
+    const studentsWithPerfectAttendance = Object.values(studentStats).filter(
+      (s) => s.attendance_rate === 100
+    ).length;
 
     // Risk analysis
-    const criticalRisk = studentsBelow75.filter(s => s.risk_level === "critical").length;
-    const highRisk = studentsBelow75.filter(s => s.risk_level === "high").length;
-    const mediumRisk = studentsBelow75.filter(s => s.risk_level === "medium").length;
+    const criticalRisk = studentsBelow75.filter(
+      (s) => s.risk_level === "critical"
+    ).length;
+    const highRisk = studentsBelow75.filter(
+      (s) => s.risk_level === "high"
+    ).length;
+    const mediumRisk = studentsBelow75.filter(
+      (s) => s.risk_level === "medium"
+    ).length;
 
     // Calculate overall attendance rate
     const totalPossibleAttendance = totalStudents * totalSessions;
-    const totalActualAttendance = Object.values(studentStats)
-      .reduce((sum, student) => sum + student.sessions_attended, 0);
-    const overallAttendanceRate = totalPossibleAttendance > 0 ? 
-      (totalActualAttendance / totalPossibleAttendance) * 100 : 0;
+    const totalActualAttendance = Object.values(studentStats).reduce(
+      (sum, student) => sum + student.sessions_attended,
+      0
+    );
+    const overallAttendanceRate =
+      totalPossibleAttendance > 0
+        ? (totalActualAttendance / totalPossibleAttendance) * 100
+        : 0;
 
     // Find best and worst sessions
     const sessionList = Object.values(sessionStats);
-    const bestSession = sessionList.length > 0 ? 
-      sessionList.reduce((max, session) => 
-        session.attendance_rate > max.attendance_rate ? session : max
-      ) : { session_code: "N/A", attendance_rate: 0 };
+    const bestSession =
+      sessionList.length > 0
+        ? sessionList.reduce((max, session) =>
+            session.attendance_rate > max.attendance_rate ? session : max
+          )
+        : { session_code: "N/A", attendance_rate: 0 };
 
-    const worstSession = sessionList.length > 0 ? 
-      sessionList.reduce((min, session) => 
-        session.attendance_rate < min.attendance_rate ? session : min
-      ) : { session_code: "N/A", attendance_rate: 0 };
+    const worstSession =
+      sessionList.length > 0
+        ? sessionList.reduce((min, session) =>
+            session.attendance_rate < min.attendance_rate ? session : min
+          )
+        : { session_code: "N/A", attendance_rate: 0 };
 
-    const averageSessionAttendance = sessionList.length > 0 ?
-      sessionList.reduce((sum, session) => sum + session.attendance_rate, 0) / sessionList.length : 0;
+    const averageSessionAttendance =
+      sessionList.length > 0
+        ? sessionList.reduce(
+            (sum, session) => sum + session.attendance_rate,
+            0
+          ) / sessionList.length
+        : 0;
 
     // Prepare return data
     return {
       course: {
         course_code: course.course_code,
         title: course.title,
-        level: course.level
+        level: course.level,
       },
       generated_at: new Date().toISOString(),
       summary: {
         overall_attendance_rate: overallAttendanceRate,
         total_sessions: totalSessions,
         total_students: totalStudents,
-        students_meeting_75_percent: studentsMeeting75
+        students_meeting_75_percent: studentsMeeting75,
       },
       risk_analysis: {
         total_at_risk: studentsBelow75.length,
         critical_risk: criticalRisk,
         high_risk: highRisk,
-        medium_risk: mediumRisk
+        medium_risk: mediumRisk,
       },
-      students_below_75_percent: studentsBelow75.sort((a, b) => a.attendance_rate - b.attendance_rate),
-      all_students: Object.values(studentStats).sort((a, b) => a.matric_no.localeCompare(b.matric_no)),
-      session_overview: sessionList.sort((a, b) => new Date(a.start_ts) - new Date(b.start_ts)),
+      students_below_75_percent: studentsBelow75.sort(
+        (a, b) => a.attendance_rate - b.attendance_rate
+      ),
+      all_students: Object.values(studentStats).sort((a, b) =>
+        a.matric_no.localeCompare(b.matric_no)
+      ),
+      session_overview: sessionList.sort(
+        (a, b) => new Date(a.start_ts) - new Date(b.start_ts)
+      ),
       insights: {
         best_attended_session: {
           session_code: bestSession.session_code,
-          attendance_rate: bestSession.attendance_rate
+          attendance_rate: bestSession.attendance_rate,
         },
         worst_attended_session: {
           session_code: worstSession.session_code,
-          attendance_rate: worstSession.attendance_rate
+          attendance_rate: worstSession.attendance_rate,
         },
         average_session_attendance: averageSessionAttendance,
-        students_with_perfect_attendance: studentsWithPerfectAttendance
-      }
+        students_with_perfect_attendance: studentsWithPerfectAttendance,
+      },
     };
-
   } catch (error) {
     console.error("Error generating course attendance data:", error);
     throw error;
@@ -289,11 +325,22 @@ router.get("/teachers", adminAuth, async (req, res) => {
           teacher_id: teacher._id,
         });
 
+        // Get all courses for this teacher
+        const teacherCourses = await Course.find({
+          teacher_id: teacher._id,
+        }).select("_id");
+
+        // Count unique students across all courses for this teacher
+        const uniqueStudentCount = await CourseStudent.distinct("student_id", {
+          course_id: { $in: teacherCourses.map((course) => course._id) },
+        });
+
         return {
           ...teacher.toObject(),
           stats: {
             total_courses: courseCount,
             total_sessions: sessionCount,
+            total_students: uniqueStudentCount.length,
           },
         };
       })
@@ -1072,7 +1119,8 @@ router.get(
       const reportData = await generateCourseAttendanceData(courseId);
 
       // Generate CSV
-      const csvBuffer = ReportGenerator.generateCourseAttendanceReportCSV(reportData);
+      const csvBuffer =
+        ReportGenerator.generateCourseAttendanceReportCSV(reportData);
 
       // If email is requested, send via email
       if (email && email.toLowerCase() === "true") {
@@ -1086,7 +1134,8 @@ router.get(
           );
 
           res.json({
-            message: "Comprehensive course attendance report has been sent to your email",
+            message:
+              "Comprehensive course attendance report has been sent to your email",
           });
           return;
         } catch (emailError) {
@@ -1096,7 +1145,9 @@ router.get(
       }
 
       // Direct download
-      const filename = `admin-course-attendance-${course.course_code}-${Date.now()}.csv`;
+      const filename = `admin-course-attendance-${
+        course.course_code
+      }-${Date.now()}.csv`;
 
       res.setHeader("Content-Type", "text/csv");
       res.setHeader(
@@ -1133,7 +1184,9 @@ router.get(
       const reportData = await generateCourseAttendanceData(courseId);
 
       // Generate PDF
-      const pdfBuffer = await ReportGenerator.generateCourseAttendanceReportPDF(reportData);
+      const pdfBuffer = await ReportGenerator.generateCourseAttendanceReportPDF(
+        reportData
+      );
 
       // If email is requested, send via email
       if (email && email.toLowerCase() === "true") {
@@ -1147,7 +1200,8 @@ router.get(
           );
 
           res.json({
-            message: "Comprehensive course attendance report has been sent to your email",
+            message:
+              "Comprehensive course attendance report has been sent to your email",
           });
           return;
         } catch (emailError) {
@@ -1157,7 +1211,9 @@ router.get(
       }
 
       // Direct download
-      const filename = `admin-course-attendance-${course.course_code}-${Date.now()}.pdf`;
+      const filename = `admin-course-attendance-${
+        course.course_code
+      }-${Date.now()}.pdf`;
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
