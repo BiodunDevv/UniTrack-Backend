@@ -788,6 +788,194 @@ router.patch(
   }
 );
 
+// Bulk mark attendance for multiple students
+router.patch(
+  "/:courseId/students/bulk-mark",
+  auth,
+  [
+    param("courseId").isMongoId().withMessage("Valid course ID required"),
+    body("sessionId").isMongoId().withMessage("Valid session ID required"),
+    body("students")
+      .isArray({ min: 1, max: 100 })
+      .withMessage("Students array required (1-100 students)"),
+    body("students.*.studentId")
+      .isMongoId()
+      .withMessage("Valid student ID required"),
+    body("students.*.status")
+      .isIn(["present", "absent", "manual_present"])
+      .withMessage("Valid status required"),
+    body("students.*.reason")
+      .optional()
+      .trim()
+      .isLength({ max: 500 })
+      .withMessage("Reason must be less than 500 characters"),
+  ],
+  validate,
+  auditLogger("bulk_attendance_marked"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { sessionId, students } = req.body;
+
+      // Verify course belongs to teacher
+      const course = await Course.findOne({
+        _id: courseId,
+        teacher_id: req.teacher._id,
+      });
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Verify session belongs to this course
+      const session = await Session.findOne({
+        _id: sessionId,
+        course_id: courseId,
+        teacher_id: req.teacher._id,
+      });
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      const results = {
+        successful: [],
+        failed: [],
+        skipped: [],
+      };
+
+      // Process each student
+      for (const studentData of students) {
+        try {
+          const { studentId, status, reason } = studentData;
+
+          // Verify student is enrolled in course
+          const enrollment = await CourseStudent.findOne({
+            course_id: courseId,
+            student_id: studentId,
+          });
+
+          if (!enrollment) {
+            results.failed.push({
+              student_id: studentId,
+              reason: "Student not enrolled in this course",
+            });
+            continue;
+          }
+
+          const student = await Student.findById(studentId);
+          if (!student) {
+            results.failed.push({
+              student_id: studentId,
+              reason: "Student not found",
+            });
+            continue;
+          }
+
+          // Check if attendance already exists
+          let attendance = await Attendance.findOne({
+            session_id: sessionId,
+            student_id: studentId,
+          });
+
+          if (attendance) {
+            // Update existing attendance
+            attendance.status = status;
+            attendance.reason = reason;
+            await attendance.save();
+            
+            results.skipped.push({
+              student_id: studentId,
+              matric_no: student.matric_no,
+              name: student.name,
+              status,
+              reason: "Attendance record updated",
+            });
+          } else {
+            // Create new manual attendance record with unique device fingerprint
+            const uniqueDeviceFingerprint = `bulk_entry_${studentId}_${sessionId}_${Date.now()}`;
+
+            attendance = new Attendance({
+              session_id: sessionId,
+              course_id: courseId,
+              student_id: studentId,
+              matric_no_submitted: student.matric_no,
+              device_fingerprint: uniqueDeviceFingerprint,
+              lat: session.lat,
+              lng: session.lng,
+              accuracy: 0,
+              status,
+              reason,
+              receipt_signature: `bulk_${Date.now()}`,
+              device_info: {
+                platform: "Bulk Entry",
+                browser: "Teacher Dashboard",
+                user_agent: "Bulk attendance marking by teacher",
+                manual_entry: true,
+              },
+            });
+            await attendance.save();
+
+            results.successful.push({
+              student_id: studentId,
+              matric_no: student.matric_no,
+              name: student.name,
+              status,
+              attendance_id: attendance._id,
+            });
+          }
+        } catch (error) {
+          console.error(`Error processing student ${studentData.studentId}:`, error);
+          
+          // Handle duplicate key error specifically
+          if (error.code === 11000 && error.keyPattern && error.keyPattern.device_fingerprint) {
+            results.failed.push({
+              student_id: studentData.studentId,
+              reason: "Attendance record conflict - duplicate entry",
+            });
+          } else {
+            results.failed.push({
+              student_id: studentData.studentId,
+              reason: error.message || "Processing error",
+            });
+          }
+        }
+      }
+
+      const totalProcessed = students.length;
+      const successCount = results.successful.length;
+      const failedCount = results.failed.length;
+      const skippedCount = results.skipped.length;
+
+      res.json({
+        message: "Bulk attendance marking completed",
+        summary: {
+          total_processed: totalProcessed,
+          successful: successCount,
+          failed: failedCount,
+          skipped: skippedCount,
+        },
+        results,
+        session: {
+          id: session._id,
+          session_code: session.session_code,
+        },
+        course: {
+          id: course._id,
+          title: course.title,
+          course_code: course.course_code,
+        },
+      });
+    } catch (error) {
+      console.error("Bulk mark attendance error:", error);
+      res.status(500).json({
+        error: "Internal server error",
+        details: ["Failed to bulk mark attendance. Please try again later."],
+      });
+    }
+  }
+);
+
 // Get student attendance history for a course
 router.get(
   "/:courseId/students/:studentId/attendance",
