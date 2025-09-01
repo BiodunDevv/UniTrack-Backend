@@ -438,6 +438,204 @@ router.post(
   }
 );
 
+// Get detailed courses for a specific teacher (admin only)
+router.get(
+  "/teachers/:teacherId/courses",
+  adminAuth,
+  [param("teacherId").isMongoId().withMessage("Valid teacher ID required")],
+  validate,
+  async (req, res) => {
+    try {
+      const { teacherId } = req.params;
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 20;
+      const skip = (page - 1) * limit;
+
+      // Verify teacher exists
+      const teacher = await Teacher.findById(teacherId).select(
+        "-password_hash"
+      );
+      if (!teacher) {
+        return res.status(404).json({ error: "Teacher not found" });
+      }
+
+      // Get courses for this teacher with pagination
+      const courses = await Course.find({ teacher_id: teacherId })
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const totalCourses = await Course.countDocuments({
+        teacher_id: teacherId,
+      });
+
+      // Get detailed stats for each course
+      const coursesWithDetails = await Promise.all(
+        courses.map(async (course) => {
+          // Get student count
+          const studentCount = await CourseStudent.countDocuments({
+            course_id: course._id,
+          });
+
+          // Get session count and active sessions
+          const totalSessions = await Session.countDocuments({
+            course_id: course._id,
+          });
+
+          const activeSessions = await Session.countDocuments({
+            course_id: course._id,
+            expiry_ts: { $gt: new Date() },
+            is_active: true,
+          });
+
+          // Get attendance statistics
+          const attendanceStats = await Attendance.aggregate([
+            { $match: { course_id: course._id } },
+            {
+              $group: {
+                _id: "$status",
+                count: { $sum: 1 },
+              },
+            },
+          ]);
+
+          const presentCount =
+            attendanceStats.find(
+              (stat) => stat._id === "present" || stat._id === "manual_present"
+            )?.count || 0;
+
+          const absentCount =
+            attendanceStats.find((stat) => stat._id === "absent")?.count || 0;
+
+          const totalAttendanceRecords = presentCount + absentCount;
+          const attendanceRate =
+            totalAttendanceRecords > 0
+              ? (presentCount / totalAttendanceRecords) * 100
+              : 0;
+
+          // Get all sessions
+          const recentSessions = await Session.find({
+            course_id: course._id,
+          })
+            .select("session_code start_ts expiry_ts is_active")
+            .sort({ start_ts: -1 });
+
+          // Calculate course health metrics
+          const courseHealth = {
+            status: activeSessions > 0 ? "active" : "inactive",
+            last_session:
+              recentSessions.length > 0 ? recentSessions[0].start_ts : null,
+            attendance_trend:
+              attendanceRate >= 75
+                ? "good"
+                : attendanceRate >= 50
+                ? "average"
+                : "poor",
+          };
+
+          // Get top performing students (by attendance rate)
+          const topStudents = await Attendance.aggregate([
+            { $match: { course_id: course._id } },
+            {
+              $group: {
+                _id: "$student_id",
+                total_sessions: { $sum: 1 },
+                present_sessions: {
+                  $sum: {
+                    $cond: [
+                      { $in: ["$status", ["present", "manual_present"]] },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+            {
+              $addFields: {
+                attendance_rate: {
+                  $multiply: [
+                    { $divide: ["$present_sessions", "$total_sessions"] },
+                    100,
+                  ],
+                },
+              },
+            },
+            { $sort: { attendance_rate: -1 } },
+            { $limit: 3 },
+            {
+              $lookup: {
+                from: "students",
+                localField: "_id",
+                foreignField: "_id",
+                as: "student",
+              },
+            },
+            { $unwind: "$student" },
+            {
+              $project: {
+                name: "$student.name",
+                matric_no: "$student.matric_no",
+                attendance_rate: { $round: ["$attendance_rate", 1] },
+                present_sessions: 1,
+                total_sessions: 1,
+              },
+            },
+          ]);
+
+          return {
+            ...course.toObject(),
+            statistics: {
+              total_students: studentCount,
+              total_sessions: totalSessions,
+              active_sessions: activeSessions,
+              total_attendance_records: totalAttendanceRecords,
+              present_count: presentCount,
+              absent_count: absentCount,
+              overall_attendance_rate: Math.round(attendanceRate * 100) / 100,
+            },
+            health: courseHealth,
+            recent_sessions: recentSessions,
+            top_students: topStudents,
+          };
+        })
+      );
+
+      // Calculate teacher's overall stats across all courses
+      const teacherOverallStats = {
+        total_courses: totalCourses,
+        total_students: await CourseStudent.distinct("student_id", {
+          course_id: { $in: courses.map((c) => c._id) },
+        }).then((students) => students.length),
+        total_sessions: await Session.countDocuments({
+          teacher_id: teacherId,
+        }),
+        active_courses: coursesWithDetails.filter(
+          (c) => c.health.status === "active"
+        ).length,
+      };
+
+      res.json({
+        teacher: {
+          ...teacher.toObject(),
+          overall_stats: teacherOverallStats,
+        },
+        courses: coursesWithDetails,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalCourses / limit),
+          totalCourses: totalCourses,
+          hasNext: page < Math.ceil(totalCourses / limit),
+          hasPrev: page > 1,
+        },
+      });
+    } catch (error) {
+      console.error("Get teacher courses error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
 // Update teacher (admin only)
 router.patch(
   "/teachers/:teacherId",
@@ -1223,6 +1421,218 @@ router.get(
       res.send(pdfBuffer);
     } catch (error) {
       console.error("Generate admin course PDF report error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Get specific session details (admin only)
+router.get(
+  "/sessions/:sessionId",
+  adminAuth,
+  [param("sessionId").isMongoId().withMessage("Valid session ID required")],
+  validate,
+  async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+
+      const session = await Session.findById(sessionId)
+        .populate("course_id", "course_code title")
+        .populate("teacher_id", "name email");
+
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      // Get all students enrolled in this course
+      const allStudents = await CourseStudent.find({
+        course_id: session.course_id._id,
+      })
+        .populate("student_id", "name email matric_no level")
+        .sort({ "student_id.name": 1 })
+        .lean();
+
+      // Get attendance records for this session
+      const attendanceRecords = await Attendance.find({ session_id: sessionId })
+        .populate("student_id", "name email matric_no level")
+        .sort({ submitted_at: -1 })
+        .lean();
+
+      // Create a map of student attendance status
+      const attendanceMap = {};
+      attendanceRecords.forEach((record) => {
+        attendanceMap[record.student_id._id.toString()] = record;
+      });
+
+      // Build comprehensive student list with attendance status
+      const studentsWithAttendance = allStudents.map((enrollment) => {
+        const student = enrollment.student_id;
+        const studentId = student._id.toString();
+        const attendanceRecord = attendanceMap[studentId];
+
+        return {
+          _id: student._id,
+          name: student.name,
+          email: student.email,
+          matric_no: student.matric_no,
+          level: student.level,
+          attendance_status: attendanceRecord
+            ? attendanceRecord.status
+            : "absent",
+          submitted_at: attendanceRecord ? attendanceRecord.submitted_at : null,
+          location: attendanceRecord ? attendanceRecord.location : null,
+          distance_from_session_m: attendanceRecord
+            ? attendanceRecord.distance_from_session_m
+            : null,
+          device_info: attendanceRecord ? attendanceRecord.device_info : null,
+          reason: attendanceRecord ? attendanceRecord.reason : null,
+          has_submitted: !!attendanceRecord,
+        };
+      });
+
+      // Separate students by attendance status
+      const presentStudents = studentsWithAttendance.filter(
+        (s) =>
+          s.attendance_status === "present" ||
+          s.attendance_status === "manual_present"
+      );
+      const absentStudents = studentsWithAttendance.filter(
+        (s) => s.attendance_status === "absent"
+      );
+
+      // Calculate statistics based on all enrolled students
+      const totalEnrolled = allStudents.length;
+      const totalSubmissions = attendanceRecords.length;
+      const presentCount = presentStudents.length;
+      const absentCount = absentStudents.length;
+
+      res.json({
+        session: {
+          ...session.toObject(),
+          is_expired: session.isExpired(),
+        },
+        students: {
+          all: studentsWithAttendance,
+          present: presentStudents,
+          absent: absentStudents,
+        },
+        // Keep the original attendance array for backward compatibility
+        attendance: attendanceRecords,
+        statistics: {
+          total_enrolled: totalEnrolled,
+          total_submissions: totalSubmissions,
+          present_count: presentCount,
+          absent_count: absentCount,
+          attendance_rate:
+            totalEnrolled > 0
+              ? Math.round((presentCount / totalEnrolled) * 100)
+              : 0,
+          submission_rate:
+            totalEnrolled > 0
+              ? Math.round((totalSubmissions / totalEnrolled) * 100)
+              : 0,
+        },
+      });
+    } catch (error) {
+      console.error("Get admin session details error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Get all sessions for a course (admin only)
+router.get(
+  "/courses/:courseId/sessions",
+  adminAuth,
+  [param("courseId").isMongoId().withMessage("Valid course ID required")],
+  validate,
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 20;
+      const skip = (page - 1) * limit;
+      const status = req.query.status; // active, expired, all
+
+      // Verify course exists (admin can view any course)
+      const course = await Course.findById(courseId).populate(
+        "teacher_id",
+        "name email"
+      );
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Build query based on status filter
+      let query = { course_id: courseId };
+
+      if (status === "active") {
+        query.expiry_ts = { $gt: new Date() };
+        query.is_active = true;
+      } else if (status === "expired") {
+        query.expiry_ts = { $lte: new Date() };
+      }
+
+      const sessions = await Session.find(query)
+        .populate("course_id", "course_code title")
+        .populate("teacher_id", "name email")
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      const total = await Session.countDocuments(query);
+
+      // Add attendance counts to each session
+      const sessionsWithStats = await Promise.all(
+        sessions.map(async (session) => {
+          const attendanceCount = await Attendance.countDocuments({
+            session_id: session._id,
+          });
+          const presentCount = await Attendance.countDocuments({
+            session_id: session._id,
+            status: { $in: ["present", "manual_present"] },
+          });
+
+          // Get total enrolled students for attendance rate calculation
+          const enrolledStudentsCount = await CourseStudent.countDocuments({
+            course_id: courseId,
+          });
+
+          const attendanceRate =
+            enrolledStudentsCount > 0
+              ? Math.round((presentCount / enrolledStudentsCount) * 100)
+              : 0;
+
+          return {
+            ...session.toObject(),
+            attendance_stats: {
+              total_submissions: attendanceCount,
+              present_count: presentCount,
+              total_enrolled: enrolledStudentsCount,
+              attendance_rate: attendanceRate,
+              is_expired: session.isExpired(),
+            },
+          };
+        })
+      );
+
+      res.json({
+        course,
+        sessions: sessionsWithStats,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          totalSessions: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1,
+        },
+        filter: {
+          status: status || "all",
+        },
+      });
+    } catch (error) {
+      console.error("Get admin course sessions error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }
