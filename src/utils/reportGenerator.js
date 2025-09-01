@@ -1,217 +1,392 @@
-const csv = require("fast-csv");
 const PDFDocument = require("pdfkit");
+const fs = require("fs");
+const path = require("path");
 
 class ReportGenerator {
-  static async generateCSV(data, columns) {
+  static generateCourseAttendanceReportPDF(reportData) {
     return new Promise((resolve, reject) => {
       try {
-        // Create CSV header
-        const header = columns.join(",") + "\n";
-
-        // Create CSV rows
-        const rows = data
-          .map((row) => {
-            return columns
-              .map((col) => {
-                const value = row[col] || "";
-                // Escape quotes and wrap in quotes if contains comma or quote
-                if (
-                  typeof value === "string" &&
-                  (value.includes(",") ||
-                    value.includes('"') ||
-                    value.includes("\n"))
-                ) {
-                  return `"${value.replace(/"/g, '""')}"`;
-                }
-                return value;
-              })
-              .join(",");
-          })
-          .join("\n");
-
-        const csvContent = header + rows;
-        resolve(Buffer.from(csvContent, "utf8"));
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  static async generateAttendanceCSV(attendanceData) {
-    const columns = [
-      "Session ID",
-      "Course Code",
-      "Course Title",
-      "Student Name",
-      "Matric No",
-      "Status",
-      "Submitted At",
-      "Location (Lat, Lng)",
-      "Reason",
-    ];
-
-    const formattedData = attendanceData.map((record) => ({
-      "Session ID": record.session_id?.toString() || "",
-      "Course Code": record.course_id?.course_code || "",
-      "Course Title": record.course_id?.title || "",
-      "Student Name": record.student_id?.name || "Unknown",
-      "Matric No": record.matric_no_submitted,
-      Status: record.status,
-      "Submitted At": new Date(record.submitted_at).toLocaleString(),
-      "Location (Lat, Lng)": `${record.lat}, ${record.lng}`,
-      Reason:
-        record.status === "manual_present"
-          ? "Marked present by lecturer"
-          : record.status === "present"
-          ? "Submitted online"
-          : record.reason || "",
-    }));
-
-    return this.generateCSV(formattedData, columns);
-  }
-
-  static async generateAdminAttendanceCSV(attendanceData) {
-    const columns = [
-      "Teacher Name",
-      "Teacher Email",
-      "Course Code",
-      "Course Title",
-      "Session ID",
-      "Session Code",
-      "Session Start",
-      "Student Name",
-      "Matric No",
-      "Email",
-      "Phone",
-      "Status",
-      "Submitted At",
-      "Latitude",
-      "Longitude",
-      "Accuracy (m)",
-      "Reason",
-    ];
-
-    const formattedData = attendanceData.map((record) => ({
-      "Teacher Name": record.course_id?.teacher_id?.name || "Unknown",
-      "Teacher Email": record.course_id?.teacher_id?.email || "Unknown",
-      "Course Code": record.course_id?.course_code || "",
-      "Course Title": record.course_id?.title || "",
-      "Session ID": record.session_id?._id?.toString() || "",
-      "Session Code": record.session_id?.session_code || "",
-      "Session Start": record.session_id?.start_ts
-        ? new Date(record.session_id.start_ts).toLocaleString()
-        : "",
-      "Student Name": record.student_id?.name || "Unknown",
-      "Matric No": record.matric_no_submitted,
-      Email: record.student_id?.email || "",
-      Phone: record.student_id?.phone || "",
-      Status: record.status,
-      "Submitted At": new Date(record.submitted_at).toLocaleString(),
-      Latitude: record.lat || "",
-      Longitude: record.lng || "",
-      "Accuracy (m)": record.accuracy || "N/A",
-      Reason:
-        record.status === "manual_present"
-          ? "Marked present by lecturer"
-          : record.status === "present"
-          ? "Submitted online"
-          : record.reason || "",
-    }));
-
-    return this.generateCSV(formattedData, columns);
-  }
-
-  static async generatePDF(title, data, options = {}) {
-    return new Promise((resolve, reject) => {
-      try {
-        const doc = new PDFDocument({ margin: 50 });
-        const buffers = [];
-
-        doc.on("data", buffers.push.bind(buffers));
-        doc.on("end", () => {
-          const pdfData = Buffer.concat(buffers);
-          resolve(pdfData);
+        const doc = new PDFDocument({
+          size: "A4",
+          margin: 50,
         });
+
+        const chunks = [];
+        doc.on("data", (chunk) => chunks.push(chunk));
+        doc.on("end", () => resolve(Buffer.concat(chunks)));
+
+        // Colors
+        const primaryBlue = "#2563eb";
+        const darkText = "#1f2937";
+        const lightGray = "#6b7280";
+        const successGreen = "#059669";
+        const warningOrange = "#d97706";
+        const errorRed = "#dc2626";
+        const mediumYellow = "#ca8a04";
+
+        // Helper function to format date
+        const formatDate = (dateString) => {
+          return new Date(dateString).toLocaleDateString("en-US", {
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          });
+        };
+
+        const formatLevel = (level) => {
+          const levelMap = {
+            100: "1st Year",
+            200: "2nd Year", 
+            300: "3rd Year",
+            400: "4th Year",
+            500: "5th Year",
+            600: "6th Year",
+          };
+          return levelMap[level] || `Level ${level}`;
+        };
+
+        // Helper function to add footer
+        const addFooter = () => {
+          doc.fillColor(lightGray)
+             .fontSize(8)
+             .text(`Generated: ${new Date().toLocaleDateString("en-US")}`, 50, 780)
+             .text(`${reportData.course.course_code} - Attendance Report`, 250, 780);
+        };
+
+        // Helper function to check if we need a new page
+        const checkPageBreak = (currentY, requiredSpace = 30) => {
+          if (currentY > 750) {
+            addFooter();
+            doc.addPage();
+            return 50; // Reset to top margin
+          }
+          return currentY;
+        };
 
         // Header
-        doc.fontSize(20).text(title, { align: "center" });
-        doc.moveDown();
+        doc.fillColor(darkText)
+           .fontSize(24)
+           .font("Helvetica-Bold")
+           .text("Comprehensive Course Attendance Report", 50, 50);
 
-        // Add generation date
-        doc.fontSize(12).text(`Generated on: ${new Date().toLocaleString()}`, {
-          align: "right",
-        });
-        doc.moveDown();
+        let yPos = 100;
 
-        // Add course info if provided
-        if (options.courseInfo) {
-          doc
-            .fontSize(14)
-            .text(
-              `Course: ${options.courseInfo.course_code} - ${options.courseInfo.title}`
-            );
-          doc.text(`Teacher: ${options.courseInfo.teacher_name}`);
-          doc.moveDown();
+        // Course Information Section
+        doc.fillColor(primaryBlue)
+           .fontSize(16)
+           .font("Helvetica-Bold")
+           .text("Course Information", 50, yPos);
+
+        yPos += 25;
+        doc.fillColor(darkText)
+           .fontSize(12)
+           .font("Helvetica");
+
+        doc.text(`Course Code: ${reportData.course.course_code}`, 50, yPos);
+        yPos += 20;
+        doc.text(`Course Title: ${reportData.course.title}`, 50, yPos);
+        yPos += 20;
+        doc.text(`Course Level: ${formatLevel(reportData.course.level)}`, 50, yPos);
+        yPos += 20;
+        doc.text(`Total Sessions: ${reportData.summary.total_sessions}`, 50, yPos);
+        yPos += 20;
+        doc.text(`Total Students: ${reportData.summary.total_students}`, 50, yPos);
+        yPos += 20;
+
+        // Overall attendance rate with color coding
+        const attendanceRate = reportData.summary.overall_attendance_rate;
+        let rateColor = successGreen;
+        if (attendanceRate < 50) rateColor = errorRed;
+        else if (attendanceRate < 75) rateColor = warningOrange;
+
+        doc.fillColor(rateColor)
+           .fontSize(14)
+           .font("Helvetica-Bold")
+           .text(`Overall Attendance Rate: ${attendanceRate.toFixed(2)}%`, 50, yPos);
+
+        yPos += 40;
+        yPos = checkPageBreak(yPos);
+
+        // Summary Statistics Section
+        doc.fillColor(primaryBlue)
+           .fontSize(16)
+           .font("Helvetica-Bold")
+           .text("Summary Statistics", 50, yPos);
+
+        yPos += 25;
+        doc.fillColor(darkText)
+           .fontSize(12)
+           .font("Helvetica");
+
+        doc.text(`Students Meeting 75% Requirement: ${reportData.summary.students_meeting_75_percent}`, 50, yPos);
+        yPos += 20;
+        doc.text(`Students Below 75% Requirement: ${reportData.students_below_75_percent.length}`, 50, yPos);
+        yPos += 20;
+        doc.text(`Students with Perfect Attendance: ${reportData.insights.students_with_perfect_attendance}`, 50, yPos);
+
+        yPos += 40;
+        yPos = checkPageBreak(yPos);
+
+        // Risk Analysis Section
+        doc.fillColor(primaryBlue)
+           .fontSize(16)
+           .font("Helvetica-Bold")
+           .text("Risk Analysis", 50, yPos);
+
+        yPos += 25;
+        doc.fillColor(darkText)
+           .fontSize(12)
+           .font("Helvetica");
+
+        doc.fillColor(errorRed)
+           .text(`Critical Risk (< 50%): ${reportData.risk_analysis.critical_risk} students`, 50, yPos);
+        yPos += 20;
+        doc.fillColor(warningOrange)
+           .text(`High Risk (50-64%): ${reportData.risk_analysis.high_risk} students`, 50, yPos);
+        yPos += 20;
+        doc.fillColor(mediumYellow)
+           .text(`Medium Risk (65-74%): ${reportData.risk_analysis.medium_risk} students`, 50, yPos);
+        yPos += 20;
+        doc.fillColor(errorRed)
+           .font("Helvetica-Bold")
+           .text(`Total Students at Risk: ${reportData.risk_analysis.total_at_risk}`, 50, yPos);
+
+        yPos += 40;
+        yPos = checkPageBreak(yPos);
+
+        // Students Below 75% Attendance Section - Table Format
+        if (reportData.students_below_75_percent.length > 0) {
+          yPos = checkPageBreak(yPos, 150);
+
+          doc.fillColor(primaryBlue)
+             .fontSize(16)
+             .font("Helvetica-Bold")
+             .text("Students Below 75% Attendance", 50, yPos);
+
+          yPos += 25;
+
+          // Table headers for students below 75%
+          doc.fillColor(darkText)
+             .fontSize(10)
+             .font("Helvetica-Bold");
+
+          const studentColWidths = [25, 110, 80, 60, 50, 60, 55];
+          const studentHeaders = ["#", "Student Name", "Matric No", "Rate %", "Attended", "Total", "Risk Level"];
+          
+          let xPos = 50;
+          studentHeaders.forEach((header, index) => {
+            doc.text(header, xPos, yPos);
+            xPos += studentColWidths[index];
+          });
+
+          yPos += 20;
+
+          // Draw header line
+          doc.strokeColor(lightGray)
+             .lineWidth(1)
+             .moveTo(50, yPos)
+             .lineTo(540, yPos)
+             .stroke();
+
+          yPos += 10;
+
+          // Student data rows for below 75%
+          reportData.students_below_75_percent.forEach((student, index) => {
+            yPos = checkPageBreak(yPos);
+
+            let studentColor = errorRed;
+            if (student.risk_level === "high") studentColor = warningOrange;
+            else if (student.risk_level === "medium") studentColor = mediumYellow;
+
+            doc.fillColor(darkText)
+               .fontSize(9)
+               .font("Helvetica");
+
+            xPos = 50;
+            const studentRowData = [
+              (index + 1).toString(),
+              student.name.length > 16 ? student.name.substring(0, 13) + "..." : student.name,
+              student.matric_no,
+              `${student.attendance_rate.toFixed(1)}%`,
+              student.sessions_attended.toString(),
+              (student.sessions_attended + student.sessions_missed).toString(),
+              student.risk_level.toUpperCase()
+            ];
+
+            studentRowData.forEach((data, colIndex) => {
+              if (colIndex === 3) { // Attendance rate column
+                doc.fillColor(studentColor);
+              } else if (colIndex === 6) { // Risk level column
+                doc.fillColor(studentColor);
+              } else {
+                doc.fillColor(darkText);
+              }
+              
+              doc.text(data, xPos, yPos);
+              xPos += studentColWidths[colIndex];
+            });
+
+            yPos += 15;
+          });
+
+          yPos += 30;
         }
 
-        // Table headers
-        const headers = options.headers || [];
-        let y = doc.y;
-        const columnWidth = (doc.page.width - 100) / headers.length;
+        // Session Overview Section - Table Format
+        yPos = checkPageBreak(yPos, 150);
 
-        // Draw table headers
-        doc.fontSize(10);
-        headers.forEach((header, index) => {
-          doc.text(header, 50 + index * columnWidth, y, {
-            width: columnWidth,
-            align: "left",
-            continued: index < headers.length - 1,
+        doc.fillColor(primaryBlue)
+           .fontSize(16)
+           .font("Helvetica-Bold")
+           .text("Session Overview", 50, yPos);
+
+        yPos += 25;
+
+        if (reportData.session_overview && reportData.session_overview.length > 0) {
+          // Table headers for session overview
+          doc.fillColor(darkText)
+             .fontSize(10)
+             .font("Helvetica-Bold");
+
+          const sessionColWidths = [25, 80, 90, 60, 60, 80];
+          const sessionHeaders = ["#", "Session Code", "Date", "Present", "Absent", "Attendance %"];
+          
+          let xPos = 50;
+          sessionHeaders.forEach((header, index) => {
+            doc.text(header, xPos, yPos);
+            xPos += sessionColWidths[index];
           });
-        });
 
-        doc.moveDown();
+          yPos += 20;
 
-        // Draw horizontal line
-        doc
-          .strokeColor("#000000")
-          .lineWidth(1)
-          .moveTo(50, doc.y)
-          .lineTo(doc.page.width - 50, doc.y)
-          .stroke();
+          // Draw header line
+          doc.strokeColor(lightGray)
+             .lineWidth(1)
+             .moveTo(50, yPos)
+             .lineTo(540, yPos)
+             .stroke();
 
-        doc.moveDown(0.5);
+          yPos += 10;
 
-        // Table data
-        data.forEach((row, rowIndex) => {
-          if (doc.y > doc.page.height - 100) {
-            doc.addPage();
-            y = 50;
-            doc.y = y;
-          }
+          // Session data rows
+          reportData.session_overview.forEach((session, index) => {
+            yPos = checkPageBreak(yPos);
 
-          y = doc.y;
+            const sessionDate = formatDate(session.start_ts);
+            const attendanceRate = session.attendance_rate.toFixed(1);
+            
+            doc.fillColor(darkText)
+               .fontSize(9)
+               .font("Helvetica");
 
-          headers.forEach((header, colIndex) => {
-            const value = row[header] || "";
-            doc.text(value.toString(), 50 + colIndex * columnWidth, y, {
-              width: columnWidth,
-              align: "left",
-              continued: colIndex < headers.length - 1,
+            xPos = 50;
+            const sessionRowData = [
+              (index + 1).toString(),
+              session.session_code,
+              sessionDate,
+              session.present_count.toString(),
+              session.absent_count.toString(),
+              `${attendanceRate}%`
+            ];
+
+            sessionRowData.forEach((data, colIndex) => {
+              if (colIndex === 5) { // Attendance rate column
+                const rate = parseFloat(attendanceRate);
+                if (rate >= 75) doc.fillColor(successGreen);
+                else if (rate >= 50) doc.fillColor(warningOrange);
+                else doc.fillColor(errorRed);
+              } else {
+                doc.fillColor(darkText);
+              }
+              
+              doc.text(data, xPos, yPos);
+              xPos += sessionColWidths[colIndex];
             });
+            
+            yPos += 15;
           });
+        }
 
-          doc.moveDown(0.5);
+        yPos += 30;
+
+        // All Students Attendance Summary Section - Enhanced Table Format
+        yPos = checkPageBreak(yPos, 150);
+
+        doc.fillColor(primaryBlue)
+           .fontSize(16)
+           .font("Helvetica-Bold")
+           .text("All Students Attendance Summary", 50, yPos);
+
+        yPos += 25;
+
+        // Table headers
+        doc.fillColor(darkText)
+           .fontSize(10)
+           .font("Helvetica-Bold");
+
+        const colWidths = [25, 80, 110, 60, 50, 60, 70];
+        const headers = ["#", "Matric No", "Name", "Attended", "Total", "Rate %", "Meets 75%"];
+        
+        let xPos = 50;
+        headers.forEach((header, index) => {
+          doc.text(header, xPos, yPos);
+          xPos += colWidths[index];
         });
 
-        // Footer
-        doc
-          .fontSize(8)
-          .text(
-            `Page ${doc.bufferedPageRange().count}`,
-            50,
-            doc.page.height - 50,
-            { align: "center" }
-          );
+        yPos += 20;
+
+        // Draw header line
+        doc.strokeColor(lightGray)
+           .lineWidth(1)
+           .moveTo(50, yPos)
+           .lineTo(540, yPos)
+           .stroke();
+
+        yPos += 10;
+
+        // Student data rows
+        if (reportData.all_students && reportData.all_students.length > 0) {
+          reportData.all_students.forEach((student, index) => {
+            yPos = checkPageBreak(yPos);
+
+            const meets75 = student.attendance_rate >= 75 ? "Yes" : "No";
+            const textColor = student.attendance_rate >= 75 ? successGreen : errorRed;
+
+            doc.fillColor(darkText)
+               .fontSize(9)
+               .font("Helvetica");
+
+            xPos = 50;
+            const rowData = [
+              (index + 1).toString(),
+              student.matric_no,
+              student.name.length > 16 ? student.name.substring(0, 13) + "..." : student.name,
+              student.sessions_attended.toString(),
+              student.total_sessions.toString(),
+              student.attendance_rate.toFixed(1),
+              meets75
+            ];
+
+            rowData.forEach((data, colIndex) => {
+              if (colIndex === 5) { // Rate % column
+                doc.fillColor(textColor);
+              } else if (colIndex === 6) { // Meets 75% column
+                doc.fillColor(textColor);
+              } else {
+                doc.fillColor(darkText);
+              }
+              
+              doc.text(data, xPos, yPos);
+              xPos += colWidths[colIndex];
+            });
+
+            yPos += 15;
+          });
+        }
+
+        // Add footer to the final page
+        addFooter();
 
         doc.end();
       } catch (error) {
@@ -220,624 +395,153 @@ class ReportGenerator {
     });
   }
 
-  static async generateAttendancePDF(attendanceData, courseInfo) {
-    const title = "Attendance Report";
+  static generateCourseAttendanceReportCSV(reportData) {
+    let csv = "Comprehensive Course Attendance Report\n\n";
+    
+    // Course Information
+    csv += "Course Information\n";
+    csv += `Course Code,${reportData.course.course_code}\n`;
+    csv += `Course Title,${reportData.course.title}\n`;
+    csv += `Course Level,${reportData.course.level}\n`;
+    csv += `Total Sessions,${reportData.summary.total_sessions}\n`;
+    csv += `Total Students,${reportData.summary.total_students}\n`;
+    csv += `Overall Attendance Rate,${reportData.summary.overall_attendance_rate.toFixed(2)}%\n\n`;
 
-    const headers = [
-      "Matric No",
-      "Student Name",
-      "Status",
-      "Submitted At",
-      "Session",
-    ];
+    // Summary Statistics
+    csv += "Summary Statistics\n";
+    csv += `Students Meeting 75% Requirement,${reportData.summary.students_meeting_75_percent}\n`;
+    csv += `Students Below 75% Requirement,${reportData.students_below_75_percent.length}\n`;
+    csv += `Students with Perfect Attendance,${reportData.insights.students_with_perfect_attendance}\n\n`;
 
-    const formattedData = attendanceData.map((record) => ({
-      "Matric No": record.matric_no_submitted,
-      "Student Name": record.student_id?.name || "Unknown",
-      Status: record.status.toUpperCase(),
-      "Submitted At": new Date(record.submitted_at).toLocaleDateString(),
-      Session:
-        new Date(record.session_id?.start_ts).toLocaleDateString() || "N/A",
-    }));
+    // Risk Analysis
+    csv += "Risk Analysis\n";
+    csv += `Critical Risk (< 50%),${reportData.risk_analysis.critical_risk} students\n`;
+    csv += `High Risk (50-64%),${reportData.risk_analysis.high_risk} students\n`;
+    csv += `Medium Risk (65-74%),${reportData.risk_analysis.medium_risk} students\n`;
+    csv += `Total Students at Risk,${reportData.risk_analysis.total_at_risk}\n\n`;
 
-    return this.generatePDF(title, formattedData, {
-      headers,
-      courseInfo,
-    });
+    // Students Below 75% Attendance
+    if (reportData.students_below_75_percent.length > 0) {
+      csv += "Students Below 75% Attendance\n";
+      csv += "#,Name,Matric No,Attendance Rate,Sessions Attended,Total Sessions,Risk Level\n";
+      
+      reportData.students_below_75_percent.forEach((student, index) => {
+        csv += `${index + 1},${student.name},${student.matric_no},${student.attendance_rate.toFixed(2)}%,${student.sessions_attended},${student.sessions_attended + student.sessions_missed},${student.risk_level}\n`;
+      });
+      csv += "\n";
+    }
+
+    // Session Overview
+    if (reportData.session_overview && reportData.session_overview.length > 0) {
+      csv += "Session Overview\n";
+      csv += "#,Session Code,Date,Present Count,Absent Count,Attendance Rate\n";
+      
+      reportData.session_overview.forEach((session, index) => {
+        const sessionDate = new Date(session.start_ts).toLocaleDateString("en-US");
+        csv += `${index + 1},${session.session_code},${sessionDate},${session.present_count},${session.absent_count},${session.attendance_rate.toFixed(1)}%\n`;
+      });
+      csv += "\n";
+    }
+
+    // All Students Attendance Summary
+    if (reportData.all_students && reportData.all_students.length > 0) {
+      csv += "All Students Attendance Summary\n";
+      csv += "#,Matric No,Name,Attended,Total,Rate %,Meets 75%\n";
+      
+      reportData.all_students.forEach((student, index) => {
+        const meets75 = student.attendance_rate >= 75 ? "Yes" : "No";
+        csv += `${index + 1},${student.matric_no},${student.name},${student.sessions_attended},${student.total_sessions},${student.attendance_rate.toFixed(1)},${meets75}\n`;
+      });
+    }
+
+    return Buffer.from(csv, "utf-8");
   }
 
-  static async generateSessionSummaryPDF(sessionData) {
-    const title = "Session Summary Report";
+  // Enhanced admin attendance report methods for backward compatibility
+  static async generateEnhancedAdminAttendanceCSV(attendanceData) {
+    let csv = "Enhanced Admin Attendance Report\n\n";
+    csv += "Session Code,Course,Teacher,Student Name,Matric No,Status,Submitted At,Location\n";
+    
+    attendanceData.forEach((record) => {
+      const sessionCode = record.session_id?.session_code || "N/A";
+      const courseInfo = record.course_id ? `${record.course_id.course_code} - ${record.course_id.title}` : "N/A";
+      const teacherName = record.course_id?.teacher_id?.name || "N/A";
+      const studentName = record.student_id?.name || "Unknown";
+      const matricNo = record.student_id?.matric_no || record.matric_no_submitted;
+      const status = record.status;
+      const submittedAt = record.submitted_at ? new Date(record.submitted_at).toLocaleString() : "Not Submitted";
+      const location = record.lat && record.lng ? `${record.lat}, ${record.lng}` : "N/A";
+      
+      csv += `${sessionCode},${courseInfo},${teacherName},${studentName},${matricNo},${status},${submittedAt},${location}\n`;
+    });
 
-    const headers = [
-      "Session Code",
-      "Date",
-      "Total Students",
-      "Present",
-      "Absent",
-      "Attendance Rate",
-    ];
-
-    const formattedData = sessionData.map((session) => ({
-      "Session Code": session.session_code,
-      Date: new Date(session.start_ts).toLocaleDateString(),
-      "Total Students": session.total_students || 0,
-      Present: session.present_count || 0,
-      Absent: session.absent_count || 0,
-      "Attendance Rate": session.attendance_rate
-        ? `${session.attendance_rate}%`
-        : "0%",
-    }));
-
-    return this.generatePDF(title, formattedData, { headers });
+    return Buffer.from(csv, "utf-8");
   }
 
   static async generateAdminAttendancePDF(attendanceData, options = {}) {
     return new Promise((resolve, reject) => {
       try {
-        const doc = new PDFDocument({ margin: 50 });
-        const buffers = [];
-
-        doc.on("data", buffers.push.bind(buffers));
-        doc.on("end", () => {
-          const pdfData = Buffer.concat(buffers);
-          resolve(pdfData);
-        });
+        const doc = new PDFDocument({ size: "A4", margin: 50 });
+        const chunks = [];
+        
+        doc.on("data", (chunk) => chunks.push(chunk));
+        doc.on("end", () => resolve(Buffer.concat(chunks)));
 
         // Header
-        doc.fontSize(20).text("UniTrack - System-wide Attendance Report", {
-          align: "center",
-        });
-        doc.moveDown();
+        doc.fontSize(20)
+           .text("Admin Attendance Report", 50, 50);
 
-        // Add generation info
-        doc
-          .fontSize(12)
-          .text(`Generated by: ${options.adminName || "System Admin"}`, {
-            align: "right",
-          });
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, {
-          align: "right",
-        });
-        doc.moveDown();
-
-        // Add filters applied
-        if (options.filters) {
-          doc.fontSize(14).text("Filters Applied:", { underline: true });
-          const filters = options.filters;
-          if (filters.teacher_id) doc.text(`Teacher ID: ${filters.teacher_id}`);
-          if (filters.course_id) doc.text(`Course ID: ${filters.course_id}`);
-          if (filters.start_date) doc.text(`Start Date: ${filters.start_date}`);
-          if (filters.end_date) doc.text(`End Date: ${filters.end_date}`);
-          if (filters.status) doc.text(`Status: ${filters.status}`);
-          doc.moveDown();
+        if (options.adminName) {
+          doc.fontSize(12)
+             .text(`Generated by: ${options.adminName}`, 50, 80);
         }
 
-        // Summary statistics
-        const totalRecords = attendanceData.length;
-        const presentCount = attendanceData.filter(
-          (r) => r.status === "present"
-        ).length;
-        const absentCount = attendanceData.filter(
-          (r) => r.status === "absent"
-        ).length;
-        const rejectedCount = attendanceData.filter(
-          (r) => r.status === "rejected"
-        ).length;
-        const manualCount = attendanceData.filter(
-          (r) => r.status === "manual_present"
-        ).length;
+        doc.fontSize(12)
+           .text(`Generated: ${new Date().toLocaleString()}`, 50, 100);
 
-        doc.fontSize(14).text("Summary Statistics:", { underline: true });
-        doc.fontSize(12);
-        doc.text(`Total Records: ${totalRecords}`);
-        doc.text(
-          `Present: ${presentCount} (${
-            totalRecords > 0
-              ? ((presentCount / totalRecords) * 100).toFixed(1)
-              : 0
-          }%)`
-        );
-        doc.text(
-          `Absent: ${absentCount} (${
-            totalRecords > 0
-              ? ((absentCount / totalRecords) * 100).toFixed(1)
-              : 0
-          }%)`
-        );
-        doc.text(
-          `Rejected: ${rejectedCount} (${
-            totalRecords > 0
-              ? ((rejectedCount / totalRecords) * 100).toFixed(1)
-              : 0
-          }%)`
-        );
-        doc.text(
-          `Manual Present: ${manualCount} (${
-            totalRecords > 0
-              ? ((manualCount / totalRecords) * 100).toFixed(1)
-              : 0
-          }%)`
-        );
-        doc.moveDown();
-
-        // Table headers for detailed data
-        doc.fontSize(10);
-        const headers = [
-          "Teacher",
-          "Course",
-          "Session",
-          "Student",
-          "Matric No",
-          "Status",
-          "Time",
-        ];
-        const colWidth = (doc.page.width - 100) / headers.length;
-        let y = doc.y;
-
-        // Draw headers
-        headers.forEach((header, index) => {
-          doc.text(header, 50 + index * colWidth, y, {
-            width: colWidth,
-            align: "center",
-          });
-        });
-
-        y += 20;
-        doc
-          .moveTo(50, y)
-          .lineTo(doc.page.width - 50, y)
-          .stroke();
-        y += 10;
-
-        // Add data rows (limited to prevent PDF from being too large)
-        const maxRows = Math.min(attendanceData.length, 100);
-        attendanceData.slice(0, maxRows).forEach((record, index) => {
-          if (y > doc.page.height - 100) {
-            doc.addPage();
-            y = 50;
-          }
-
-          const rowData = [
-            record.course_id?.teacher_id?.name || "Unknown",
-            record.course_id?.course_code || "",
-            record.session_id?.session_code || "",
-            record.student_id?.name || "Unknown",
-            record.matric_no_submitted,
-            record.status,
-            new Date(record.submitted_at).toLocaleDateString(),
-          ];
-
-          rowData.forEach((data, colIndex) => {
-            doc.text(
-              String(data).substring(0, 15),
-              50 + colIndex * colWidth,
-              y,
-              {
-                width: colWidth,
-                align: "center",
-              }
-            );
-          });
-
-          y += 15;
-
-          // Add separator line every 5 rows
-          if ((index + 1) % 5 === 0) {
-            doc
-              .moveTo(50, y)
-              .lineTo(doc.page.width - 50, y)
-              .stroke();
-            y += 5;
-          }
-        });
-
-        if (attendanceData.length > maxRows) {
-          doc.moveDown();
-          doc
-            .fontSize(10)
-            .text(
-              `Note: Showing first ${maxRows} of ${totalRecords} records. Download CSV for complete data.`,
-              { align: "center" }
-            );
-        }
-
-        doc.end();
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-
-  // Session-based CSV report generation
-  static async generateSessionAttendanceCSV(attendanceData, sessionInfo) {
-    const columns = [
-      "Course Code",
-      "Course Title",
-      "Session Code",
-      "Session Date",
-      "Session Start Time",
-      "Student Name",
-      "Matric No",
-      "Email",
-      "Phone",
-      "Status",
-      "Submitted At",
-      "Submission Time",
-      "Latitude",
-      "Longitude",
-      "Accuracy (m)",
-      "Reason",
-    ];
-
-    const sessionDate = sessionInfo.start_ts
-      ? new Date(sessionInfo.start_ts).toLocaleDateString()
-      : "Unknown";
-    const sessionStartTime = sessionInfo.start_ts
-      ? new Date(sessionInfo.start_ts).toLocaleTimeString()
-      : "Unknown";
-
-    const formattedData = attendanceData.map((record) => ({
-      "Course Code":
-        sessionInfo.course_code || record.course_id?.course_code || "",
-      "Course Title": sessionInfo.course_title || record.course_id?.title || "",
-      "Session Code":
-        sessionInfo.session_code || record.session_id?.session_code || "",
-      "Session Date": sessionDate,
-      "Session Start Time": sessionStartTime,
-      "Student Name": record.student_id?.name || "Unknown",
-      "Matric No": record.matric_no_submitted,
-      Email: record.student_id?.email || "",
-      Phone: record.student_id?.phone || "",
-      Status: record.status,
-      "Submitted At": new Date(record.submitted_at).toLocaleDateString(),
-      "Submission Time": new Date(record.submitted_at).toLocaleTimeString(),
-      Latitude: record.lat || "",
-      Longitude: record.lng || "",
-      "Accuracy (m)": record.accuracy || "N/A",
-      Reason:
-        record.status === "manual_present"
-          ? "Marked present by lecturer"
-          : record.status === "present"
-          ? "Submitted online"
-          : record.reason || "",
-    }));
-
-    return this.generateCSV(formattedData, columns);
-  }
-
-  // Session-based PDF report generation
-  static async generateSessionAttendancePDF(
-    attendanceData,
-    sessionInfo,
-    teacherInfo
-  ) {
-    return new Promise((resolve, reject) => {
-      try {
-        const doc = new PDFDocument({ margin: 40 });
-        const buffers = [];
-
-        doc.on("data", buffers.push.bind(buffers));
-        doc.on("end", () => {
-          const pdfBuffer = Buffer.concat(buffers);
-          resolve(pdfBuffer);
-        });
-
-        // Header
-        doc
-          .fontSize(20)
-          .fillColor("#2c3e50")
-          .text("SESSION ATTENDANCE REPORT", { align: "center" });
-        doc.moveDown(0.5);
-
-        // Session Information Box
-        doc.rect(40, doc.y, 515, 120).fillAndStroke("#f8f9fa", "#dee2e6");
-        doc.fillColor("#2c3e50");
-
-        const sessionY = doc.y + 10;
-        doc
-          .fontSize(12)
-          .text("SESSION DETAILS", 50, sessionY, { underline: true });
-
-        const sessionDate = sessionInfo.start_ts
-          ? new Date(sessionInfo.start_ts).toLocaleDateString()
-          : "Unknown";
-        const sessionTime = sessionInfo.start_ts
-          ? new Date(sessionInfo.start_ts).toLocaleTimeString()
-          : "Unknown";
-
-        doc
-          .fontSize(10)
-          .text(
-            `Course: ${sessionInfo.course_title || "Unknown"} (${
-              sessionInfo.course_code || "N/A"
-            })`,
-            50,
-            sessionY + 25
-          )
-          .text(
-            `Session Code: ${sessionInfo.session_code || "N/A"}`,
-            50,
-            sessionY + 40
-          )
-          .text(`Date: ${sessionDate}`, 50, sessionY + 55)
-          .text(`Start Time: ${sessionTime}`, 50, sessionY + 70)
-          .text(
-            `Teacher: ${teacherInfo?.name || "Unknown"}`,
-            300,
-            sessionY + 25
-          )
-          .text(`Email: ${teacherInfo?.email || "N/A"}`, 300, sessionY + 40)
-          .text(`Total Students: ${attendanceData.length}`, 300, sessionY + 55)
-          .text(
-            `Report Generated: ${new Date().toLocaleString()}`,
-            300,
-            sessionY + 70
-          );
-
-        doc.y += 140;
-
-        // Attendance Statistics
-        const stats = {
-          present: attendanceData.filter((r) => r.status === "present").length,
-          manual_present: attendanceData.filter(
-            (r) => r.status === "manual_present"
-          ).length,
-          absent: attendanceData.filter((r) => r.status === "absent").length,
-          rejected: attendanceData.filter((r) => r.status === "rejected")
-            .length,
-        };
-
-        doc
-          .fontSize(14)
-          .fillColor("#2c3e50")
-          .text("ATTENDANCE STATISTICS", { underline: true });
-        doc.moveDown(0.3);
-
-        const statY = doc.y;
-        doc
-          .fontSize(10)
-          .fillColor("#27ae60")
-          .text(`Present: ${stats.present}`, 50, statY)
-          .fillColor("#f39c12")
-          .text(`Manual Present: ${stats.manual_present}`, 150, statY)
-          .fillColor("#e74c3c")
-          .text(`Absent: ${stats.absent}`, 280, statY)
-          .fillColor("#8e44ad")
-          .text(`Rejected: ${stats.rejected}`, 350, statY);
-
-        doc.moveDown(1);
-
-        // Attendance Table
-        doc
-          .fillColor("#2c3e50")
-          .fontSize(12)
-          .text("STUDENT ATTENDANCE DETAILS", { underline: true });
-        doc.moveDown(0.5);
+        let yPos = 140;
 
         // Table headers
-        const tableTop = doc.y;
-        const itemCodeX = 50;
-        const itemNameX = 120;
-        const itemMatricX = 220;
-        const itemStatusX = 320;
-        const itemTimeX = 380;
-        const itemReasonX = 450;
+        doc.fontSize(10)
+           .text("Session", 50, yPos)
+           .text("Course", 120, yPos)
+           .text("Student", 220, yPos)
+           .text("Matric No", 320, yPos)
+           .text("Status", 420, yPos)
+           .text("Time", 480, yPos);
 
-        doc.fontSize(9).fillColor("#2c3e50");
-        doc
-          .text("S/N", itemCodeX, tableTop, { width: 30, align: "center" })
-          .text("Student Name", itemNameX, tableTop, { width: 90 })
-          .text("Matric No", itemMatricX, tableTop, { width: 90 })
-          .text("Status", itemStatusX, tableTop, { width: 50 })
-          .text("Time", itemTimeX, tableTop, { width: 60 })
-          .text("Reason", itemReasonX, tableTop, { width: 100 });
+        yPos += 20;
 
-        // Table line
-        doc
-          .moveTo(40, tableTop + 15)
-          .lineTo(555, tableTop + 15)
-          .stroke();
-
-        // Table rows
-        let currentY = tableTop + 25;
-        attendanceData.forEach((record, index) => {
-          if (currentY > 700) {
+        // Data rows
+        attendanceData.forEach((record) => {
+          if (yPos > 750) {
             doc.addPage();
-            currentY = 50;
+            yPos = 50;
           }
 
-          const statusColor =
-            {
-              present: "#27ae60",
-              manual_present: "#f39c12",
-              absent: "#e74c3c",
-              rejected: "#8e44ad",
-            }[record.status] || "#2c3e50";
+          const sessionCode = record.session_id?.session_code || "N/A";
+          const courseCode = record.course_id?.course_code || "N/A";
+          const studentName = record.student_id?.name?.substring(0, 15) || "Unknown";
+          const matricNo = record.student_id?.matric_no || record.matric_no_submitted;
+          const status = record.status;
+          const time = record.submitted_at ? new Date(record.submitted_at).toLocaleDateString() : "N/A";
 
-          const submissionTime = new Date(
-            record.submitted_at
-          ).toLocaleTimeString();
+          doc.fontSize(8)
+             .text(sessionCode, 50, yPos)
+             .text(courseCode, 120, yPos)
+             .text(studentName, 220, yPos)
+             .text(matricNo, 320, yPos)
+             .text(status, 420, yPos)
+             .text(time, 480, yPos);
 
-          doc
-            .fontSize(8)
-            .fillColor("#2c3e50")
-            .text(index + 1, itemCodeX, currentY, {
-              width: 30,
-              align: "center",
-            })
-            .text(record.student_id?.name || "Unknown", itemNameX, currentY, {
-              width: 90,
-            })
-            .text(record.matric_no_submitted || "N/A", itemMatricX, currentY, {
-              width: 90,
-            })
-            .fillColor(statusColor)
-            .text(record.status.toUpperCase(), itemStatusX, currentY, {
-              width: 50,
-            })
-            .fillColor("#2c3e50")
-            .text(submissionTime, itemTimeX, currentY, { width: 60 })
-            .text(
-              record.status === "manual_present"
-                ? "Marked present by lecturer"
-                : record.status === "present"
-                ? "Submitted online"
-                : record.reason || "",
-              itemReasonX,
-              currentY,
-              { width: 100 }
-            );
-
-          currentY += 20;
+          yPos += 15;
         });
-
-        // Footer
-        doc
-          .fontSize(8)
-          .fillColor("#7f8c8d")
-          .text(
-            "Generated by InClass Attendance System",
-            40,
-            doc.page.height - 40,
-            {
-              align: "center",
-              width: doc.page.width - 80,
-            }
-          );
 
         doc.end();
       } catch (error) {
         reject(error);
       }
     });
-  }
-
-  // Enhanced admin reports with session grouping
-  static async generateEnhancedAdminAttendanceCSV(attendanceData) {
-    const columns = [
-      "Date",
-      "Session Code",
-      "Course Code",
-      "Course Title",
-      "Teacher Name",
-      "Teacher Email",
-      "Total Students",
-      "Present Count",
-      "Manual Present Count",
-      "Absent Count",
-      "Rejected Count",
-      "Attendance Rate %",
-      "Session Start Time",
-      "Student Name",
-      "Matric No",
-      "Status",
-      "Submission Time",
-      "Latitude",
-      "Longitude",
-      "Accuracy (m)",
-      "Reason",
-    ];
-
-    // Group by session for better organization
-    const sessionGroups = {};
-    attendanceData.forEach((record) => {
-      const sessionId = record.session_id?._id?.toString() || "unknown";
-      if (!sessionGroups[sessionId]) {
-        sessionGroups[sessionId] = [];
-      }
-      sessionGroups[sessionId].push(record);
-    });
-
-    const formattedData = [];
-
-    Object.entries(sessionGroups).forEach(([sessionId, records]) => {
-      const firstRecord = records[0];
-      const stats = {
-        total: records.length,
-        present: records.filter((r) => r.status === "present").length,
-        manual_present: records.filter((r) => r.status === "manual_present")
-          .length,
-        absent: records.filter((r) => r.status === "absent").length,
-        rejected: records.filter((r) => r.status === "rejected").length,
-      };
-
-      const attendanceRate = (
-        ((stats.present + stats.manual_present) / stats.total) *
-        100
-      ).toFixed(1);
-      const sessionDate = firstRecord.session_id?.start_ts
-        ? new Date(firstRecord.session_id.start_ts).toLocaleDateString()
-        : "Unknown";
-      const sessionStartTime = firstRecord.session_id?.start_ts
-        ? new Date(firstRecord.session_id.start_ts).toLocaleTimeString()
-        : "Unknown";
-
-      records.forEach((record, index) => {
-        formattedData.push({
-          Date: index === 0 ? sessionDate : "", // Show date only on first row of session
-          "Session Code":
-            index === 0 ? firstRecord.session_id?.session_code || "N/A" : "",
-          "Course Code":
-            index === 0 ? firstRecord.course_id?.course_code || "" : "",
-          "Course Title": index === 0 ? firstRecord.course_id?.title || "" : "",
-          "Teacher Name":
-            index === 0
-              ? firstRecord.course_id?.teacher_id?.name || "Unknown"
-              : "",
-          "Teacher Email":
-            index === 0
-              ? firstRecord.course_id?.teacher_id?.email || "Unknown"
-              : "",
-          "Total Students": index === 0 ? stats.total : "",
-          "Present Count": index === 0 ? stats.present : "",
-          "Manual Present Count": index === 0 ? stats.manual_present : "",
-          "Absent Count": index === 0 ? stats.absent : "",
-          "Rejected Count": index === 0 ? stats.rejected : "",
-          "Attendance Rate %": index === 0 ? attendanceRate : "",
-          "Session Start Time": index === 0 ? sessionStartTime : "",
-          "Student Name": record.student_id?.name || "Unknown",
-          "Matric No": record.matric_no_submitted,
-          Status: record.status,
-          "Submission Time": new Date(record.submitted_at).toLocaleString(),
-          Latitude: record.lat || "",
-          Longitude: record.lng || "",
-          "Accuracy (m)": record.accuracy || "N/A",
-          Reason:
-            record.status === "manual_present"
-              ? "Marked present by lecturer"
-              : record.status === "present"
-              ? "Submitted online"
-              : record.reason || "",
-        });
-      });
-
-      // Add separator row between sessions
-      formattedData.push({
-        Date: "---",
-        "Session Code": "---",
-        "Course Code": "---",
-        "Course Title": "---",
-        "Teacher Name": "---",
-        "Teacher Email": "---",
-        "Total Students": "---",
-        "Present Count": "---",
-        "Manual Present Count": "---",
-        "Absent Count": "---",
-        "Rejected Count": "---",
-        "Attendance Rate %": "---",
-        "Session Start Time": "---",
-        "Student Name": "---",
-        "Matric No": "---",
-        Status: "---",
-        "Submission Time": "---",
-        Latitude: "---",
-        Longitude: "---",
-        "Accuracy (m)": "---",
-      });
-    });
-
-    return this.generateCSV(formattedData, columns);
   }
 }
 

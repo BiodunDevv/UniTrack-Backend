@@ -2,6 +2,7 @@ const express = require("express");
 const { body, param, query } = require("express-validator");
 const Teacher = require("../models/Teacher");
 const Course = require("../models/Course");
+const CourseStudent = require("../models/CourseStudent");
 const Student = require("../models/Student");
 const Session = require("../models/Session");
 const Attendance = require("../models/Attendance");
@@ -15,6 +16,183 @@ const { generateRandomPassword } = require("../utils/helpers");
 
 const emailService = new EmailService();
 const router = express.Router();
+
+// Helper function to generate comprehensive course attendance data
+async function generateCourseAttendanceData(courseId) {
+  try {
+    // Get course information
+    const course = await Course.findById(courseId);
+    if (!course) {
+      throw new Error("Course not found");
+    }
+
+    // Get all sessions for this course
+    const sessions = await Session.find({ course_id: courseId })
+      .sort({ start_ts: 1 });
+
+    // Get all students enrolled in this course
+    const enrolledStudents = await CourseStudent.find({ course_id: courseId })
+      .populate("student_id", "matric_no name email level");
+
+    // Get all attendance records for this course
+    const attendanceRecords = await Attendance.find({ course_id: courseId })
+      .populate("student_id", "matric_no name email level")
+      .populate("session_id", "session_code start_ts expiry_ts");
+
+    // Calculate statistics for each student
+    const studentStats = {};
+    const sessionStats = {};
+
+    // Initialize student stats
+    enrolledStudents.forEach(enrollment => {
+      const student = enrollment.student_id;
+      studentStats[student._id] = {
+        id: student._id,
+        name: student.name,
+        email: student.email,
+        matric_no: student.matric_no,
+        level: student.level,
+        sessions_attended: 0,
+        sessions_missed: 0,
+        total_sessions: sessions.length,
+        attendance_rate: 0,
+        risk_level: "low"
+      };
+    });
+
+    // Initialize session stats
+    sessions.forEach(session => {
+      sessionStats[session._id] = {
+        session_code: session.session_code,
+        start_ts: session.start_ts,
+        present_count: 0,
+        absent_count: 0,
+        total_enrolled: enrolledStudents.length,
+        attendance_rate: 0
+      };
+    });
+
+    // Process attendance records
+    attendanceRecords.forEach(record => {
+      const studentId = record.student_id._id;
+      const sessionId = record.session_id._id;
+
+      if (studentStats[studentId] && sessionStats[sessionId]) {
+        if (record.status === "present" || record.status === "manual_present") {
+          studentStats[studentId].sessions_attended++;
+          sessionStats[sessionId].present_count++;
+        } else {
+          studentStats[studentId].sessions_missed++;
+          sessionStats[sessionId].absent_count++;
+        }
+      }
+    });
+
+    // Calculate missing sessions for students who didn't submit attendance
+    Object.values(studentStats).forEach(student => {
+      const totalSubmissions = student.sessions_attended + student.sessions_missed;
+      student.sessions_missed = sessions.length - student.sessions_attended;
+      student.attendance_rate = sessions.length > 0 ? 
+        (student.sessions_attended / sessions.length) * 100 : 0;
+
+      // Determine risk level
+      if (student.attendance_rate < 50) {
+        student.risk_level = "critical";
+      } else if (student.attendance_rate < 65) {
+        student.risk_level = "high";
+      } else if (student.attendance_rate < 75) {
+        student.risk_level = "medium";
+      } else {
+        student.risk_level = "low";
+      }
+
+      student.sessions_needed_for_75_percent = Math.max(0, 
+        Math.ceil(sessions.length * 0.75) - student.sessions_attended);
+    });
+
+    // Calculate session attendance rates
+    Object.values(sessionStats).forEach(session => {
+      session.attendance_rate = session.total_enrolled > 0 ? 
+        (session.present_count / session.total_enrolled) * 100 : 0;
+    });
+
+    // Calculate overall statistics
+    const totalStudents = enrolledStudents.length;
+    const totalSessions = sessions.length;
+    const studentsBelow75 = Object.values(studentStats).filter(s => s.attendance_rate < 75);
+    const studentsMeeting75 = totalStudents - studentsBelow75.length;
+    const studentsWithPerfectAttendance = Object.values(studentStats)
+      .filter(s => s.attendance_rate === 100).length;
+
+    // Risk analysis
+    const criticalRisk = studentsBelow75.filter(s => s.risk_level === "critical").length;
+    const highRisk = studentsBelow75.filter(s => s.risk_level === "high").length;
+    const mediumRisk = studentsBelow75.filter(s => s.risk_level === "medium").length;
+
+    // Calculate overall attendance rate
+    const totalPossibleAttendance = totalStudents * totalSessions;
+    const totalActualAttendance = Object.values(studentStats)
+      .reduce((sum, student) => sum + student.sessions_attended, 0);
+    const overallAttendanceRate = totalPossibleAttendance > 0 ? 
+      (totalActualAttendance / totalPossibleAttendance) * 100 : 0;
+
+    // Find best and worst sessions
+    const sessionList = Object.values(sessionStats);
+    const bestSession = sessionList.length > 0 ? 
+      sessionList.reduce((max, session) => 
+        session.attendance_rate > max.attendance_rate ? session : max
+      ) : { session_code: "N/A", attendance_rate: 0 };
+
+    const worstSession = sessionList.length > 0 ? 
+      sessionList.reduce((min, session) => 
+        session.attendance_rate < min.attendance_rate ? session : min
+      ) : { session_code: "N/A", attendance_rate: 0 };
+
+    const averageSessionAttendance = sessionList.length > 0 ?
+      sessionList.reduce((sum, session) => sum + session.attendance_rate, 0) / sessionList.length : 0;
+
+    // Prepare return data
+    return {
+      course: {
+        course_code: course.course_code,
+        title: course.title,
+        level: course.level
+      },
+      generated_at: new Date().toISOString(),
+      summary: {
+        overall_attendance_rate: overallAttendanceRate,
+        total_sessions: totalSessions,
+        total_students: totalStudents,
+        students_meeting_75_percent: studentsMeeting75
+      },
+      risk_analysis: {
+        total_at_risk: studentsBelow75.length,
+        critical_risk: criticalRisk,
+        high_risk: highRisk,
+        medium_risk: mediumRisk
+      },
+      students_below_75_percent: studentsBelow75.sort((a, b) => a.attendance_rate - b.attendance_rate),
+      all_students: Object.values(studentStats).sort((a, b) => a.matric_no.localeCompare(b.matric_no)),
+      session_overview: sessionList.sort((a, b) => new Date(a.start_ts) - new Date(b.start_ts)),
+      insights: {
+        best_attended_session: {
+          session_code: bestSession.session_code,
+          attendance_rate: bestSession.attendance_rate
+        },
+        worst_attended_session: {
+          session_code: worstSession.session_code,
+          attendance_rate: worstSession.attendance_rate
+        },
+        average_session_attendance: averageSessionAttendance,
+        students_with_perfect_attendance: studentsWithPerfectAttendance
+      }
+    };
+
+  } catch (error) {
+    console.error("Error generating course attendance data:", error);
+    throw error;
+  }
+}
 
 // Get system statistics (admin only)
 router.get("/stats", adminAuth, async (req, res) => {
@@ -867,6 +1045,128 @@ router.get(
       }
     } catch (error) {
       console.error("Admin PDF report error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Download comprehensive course attendance report (CSV) - Admin only
+router.get(
+  "/course/:courseId/report.csv",
+  adminAuth,
+  [param("courseId").isMongoId().withMessage("Valid course ID required")],
+  validate,
+  auditLogger("admin_downloaded_course_csv_report"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { email } = req.query;
+
+      // Verify course exists
+      const course = await Course.findById(courseId);
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Generate comprehensive course attendance report data
+      const reportData = await generateCourseAttendanceData(courseId);
+
+      // Generate CSV
+      const csvBuffer = ReportGenerator.generateCourseAttendanceReportCSV(reportData);
+
+      // If email is requested, send via email
+      if (email && email.toLowerCase() === "true") {
+        try {
+          await emailService.sendAttendanceReport(
+            req.admin.email,
+            req.admin.name,
+            `${course.course_code} - ${course.title}`,
+            csvBuffer,
+            "csv"
+          );
+
+          res.json({
+            message: "Comprehensive course attendance report has been sent to your email",
+          });
+          return;
+        } catch (emailError) {
+          console.error("Failed to send report email:", emailError);
+          // Fall through to direct download
+        }
+      }
+
+      // Direct download
+      const filename = `admin-course-attendance-${course.course_code}-${Date.now()}.csv`;
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`
+      );
+      res.send(csvBuffer);
+    } catch (error) {
+      console.error("Generate admin course CSV report error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Download comprehensive course attendance report (PDF) - Admin only
+router.get(
+  "/course/:courseId/report.pdf",
+  adminAuth,
+  [param("courseId").isMongoId().withMessage("Valid course ID required")],
+  validate,
+  auditLogger("admin_downloaded_course_pdf_report"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { email } = req.query;
+
+      // Verify course exists
+      const course = await Course.findById(courseId);
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Generate comprehensive course attendance report data
+      const reportData = await generateCourseAttendanceData(courseId);
+
+      // Generate PDF
+      const pdfBuffer = await ReportGenerator.generateCourseAttendanceReportPDF(reportData);
+
+      // If email is requested, send via email
+      if (email && email.toLowerCase() === "true") {
+        try {
+          await emailService.sendAttendanceReport(
+            req.admin.email,
+            req.admin.name,
+            `${course.course_code} - ${course.title}`,
+            pdfBuffer,
+            "pdf"
+          );
+
+          res.json({
+            message: "Comprehensive course attendance report has been sent to your email",
+          });
+          return;
+        } catch (emailError) {
+          console.error("Failed to send report email:", emailError);
+          // Fall through to direct download
+        }
+      }
+
+      // Direct download
+      const filename = `admin-course-attendance-${course.course_code}-${Date.now()}.pdf`;
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`
+      );
+      res.send(pdfBuffer);
+    } catch (error) {
+      console.error("Generate admin course PDF report error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }

@@ -1,4 +1,4 @@
-# UniTrack Attendance System API Documentation
+j# UniTrack Attendance System API Documentation
 
 ## Authentication
 
@@ -479,31 +479,60 @@ Authorization: Bearer <token>
 }
 ```
 
-### Download CSV Report
+### Download Comprehensive Course Report (CSV)
 
 ```http
-GET /attendance/course/:courseId/report.csv?startDate=2025-08-01&endDate=2025-08-31&email=true
+GET /attendance/course/:courseId/report.csv?email=true
 Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
 
-- `startDate`: Filter from date (ISO format)
-- `endDate`: Filter to date (ISO format)
 - `email`: Set to `true` to send via email instead of download
 
 **Response (Direct Download):**
-Returns CSV file with headers:
-
-```
-Session ID,Course Code,Course Title,Student Name,Matric No,Status,Submitted At,Location (Lat, Lng),Distance (m),Reason
-```
+Returns comprehensive CSV report with the following sections:
+- Course Information
+- Summary Statistics
+- Risk Analysis
+- Students Below 75% Attendance
+- Session Overview
+- All Students Attendance Summary
 
 **Response (Email):**
 
 ```json
 {
-  "message": "Attendance report has been sent to your email"
+  "message": "Comprehensive attendance report has been sent to your email"
+}
+```
+
+### Download Comprehensive Course Report (PDF)
+
+```http
+GET /attendance/course/:courseId/report.pdf?email=true
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+
+- `email`: Set to `true` to send via email instead of download
+
+**Features:**
+- Complete course attendance analysis
+- Risk assessment for students below 75% attendance
+- Session-by-session breakdown
+- Visual charts and statistics
+- Professional formatting
+
+**Response (Direct Download):**
+Returns PDF file
+
+**Response (Email):**
+
+```json
+{
+  "message": "Comprehensive attendance report has been sent to your email"
 }
 ```
 
@@ -517,6 +546,24 @@ Session ID,Course Code,Course Title,Student Name,Matric No,Status,Submitted At,L
 GET /admin/stats
 Authorization: Bearer <admin-token>
 ```
+
+### Admin Course Reports
+
+#### Download Comprehensive Course Report (CSV) - Admin
+
+```http
+GET /admin/course/:courseId/report.csv?email=true
+Authorization: Bearer <admin-token>
+```
+
+#### Download Comprehensive Course Report (PDF) - Admin
+
+```http
+GET /admin/course/:courseId/report.pdf?email=true
+Authorization: Bearer <admin-token>
+```
+
+Both admin endpoints provide the same comprehensive reporting functionality as teacher endpoints but with admin-level access to any course.
 
 **Response:**
 
