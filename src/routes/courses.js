@@ -230,8 +230,8 @@ router.get(
           ? Math.round((presentCount / totalAttendanceRecords) * 100)
           : 0;
 
-      // Get recent session activity
-      const recentSessions = sessions.slice(0, 5).map((session) => ({
+      // Get all session activity (changed from recent sessions to all sessions)
+      const recentSessions = sessions.map((session) => ({
         _id: session._id,
         session_code: session.session_code,
         start_time: session.start_ts,
