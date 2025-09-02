@@ -32,7 +32,7 @@ router.get("/teachers", auth, async (req, res) => {
   }
 });
 
-// Get another teacher's courses with details (for student sharing)
+// Get another teacher's courses with details
 router.get(
   "/my-courses",
   auth,

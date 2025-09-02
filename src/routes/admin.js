@@ -375,25 +375,12 @@ router.post(
       .isEmail()
       .normalizeEmail()
       .withMessage("Valid email required"),
-    body("role")
-      .optional()
-      .isIn(["teacher", "admin"])
-      .withMessage("Invalid role"),
-    body("sendWelcomeEmail")
-      .optional()
-      .isBoolean()
-      .withMessage("Send welcome email must be boolean"),
   ],
   validate,
   auditLogger("admin_created_teacher"),
   async (req, res) => {
     try {
-      const {
-        name,
-        email,
-        role = "teacher",
-        sendWelcomeEmail = true,
-      } = req.body;
+      const { name, email } = req.body;
 
       // Check if teacher already exists
       const existingTeacher = await Teacher.findOne({ email });
@@ -403,27 +390,25 @@ router.post(
           .json({ error: "Teacher with this email already exists" });
       }
 
-      // Generate temporary password
-      const temporaryPassword = generateRandomPassword();
+      // Set default password for all lecturers
+      const temporaryPassword = "123456789";
 
       // Create teacher
       const teacher = new Teacher({
         name,
         email,
         password_hash: temporaryPassword,
-        role,
+        role: "teacher",
       });
 
       await teacher.save();
 
-      // Send welcome email with credentials
-      if (sendWelcomeEmail) {
-        try {
-          await emailService.sendWelcomeEmail(email, name, temporaryPassword);
-        } catch (emailError) {
-          console.error("Failed to send welcome email:", emailError);
-          // Don't fail the request if email fails
-        }
+      // Automatically send welcome email with credentials
+      try {
+        await emailService.sendWelcomeEmail(email, name, temporaryPassword);
+      } catch (emailError) {
+        console.error("Failed to send welcome email:", emailError);
+        // Don't fail the request if email fails
       }
 
       res.status(201).json({
@@ -433,6 +418,99 @@ router.post(
       });
     } catch (error) {
       console.error("Create teacher error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Create multiple teacher accounts in bulk (admin only)
+router.post(
+  "/teachers/bulk",
+  adminAuth,
+  [
+    body("teachers")
+      .isArray({ min: 1 })
+      .withMessage("Teachers array is required with at least one teacher"),
+    body("teachers.*.name")
+      .trim()
+      .isLength({ min: 2, max: 100 })
+      .withMessage("Each teacher name must be 2-100 characters"),
+    body("teachers.*.email")
+      .isEmail()
+      .normalizeEmail()
+      .withMessage("Each teacher must have a valid email"),
+  ],
+  validate,
+  auditLogger("admin_bulk_created_teachers"),
+  async (req, res) => {
+    try {
+      const { teachers } = req.body;
+      const results = {
+        created: [],
+        failed: [],
+        total_processed: teachers.length,
+      };
+
+      // Set default password for all lecturers
+      const temporaryPassword = "123456789";
+
+      // Process each teacher
+      for (const teacherData of teachers) {
+        try {
+          const { name, email } = teacherData;
+
+          // Check if teacher already exists
+          const existingTeacher = await Teacher.findOne({ email });
+          if (existingTeacher) {
+            results.failed.push({
+              name,
+              email,
+              error: "Teacher with this email already exists",
+            });
+            continue;
+          }
+
+          // Create teacher
+          const teacher = new Teacher({
+            name,
+            email,
+            password_hash: temporaryPassword,
+            role: "teacher",
+          });
+
+          await teacher.save();
+
+          // Automatically send welcome email with credentials
+          try {
+            await emailService.sendWelcomeEmail(email, name, temporaryPassword);
+          } catch (emailError) {
+            console.error(
+              `Failed to send welcome email to ${email}:`,
+              emailError
+            );
+            // Continue with creation even if email fails
+          }
+
+          results.created.push({
+            teacher: teacher.toJSON(),
+            temporary_password: temporaryPassword,
+          });
+        } catch (error) {
+          console.error(`Error creating teacher ${teacherData.email}:`, error);
+          results.failed.push({
+            name: teacherData.name,
+            email: teacherData.email,
+            error: "Internal error during creation",
+          });
+        }
+      }
+
+      res.status(201).json({
+        message: `Bulk teacher creation completed. ${results.created.length} created, ${results.failed.length} failed.`,
+        results,
+      });
+    } catch (error) {
+      console.error("Bulk create teachers error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }
@@ -707,7 +785,7 @@ router.patch(
   }
 );
 
-// Delete teacher (admin only)
+// Delete teacher (admin only) - Comprehensive deletion
 router.delete(
   "/teachers/:teacherId",
   adminAuth,
@@ -719,7 +797,9 @@ router.delete(
       const { teacherId } = req.params;
 
       // Prevent admin from deleting themselves
-      if (teacherId === req.teacher._id.toString()) {
+      const currentUserId =
+        req.admin?._id?.toString() || req.teacher?._id?.toString();
+      if (teacherId === currentUserId) {
         return res
           .status(400)
           .json({ error: "Cannot delete your own account" });
@@ -730,29 +810,105 @@ router.delete(
         return res.status(404).json({ error: "Teacher not found" });
       }
 
-      // Check if teacher has active sessions
-      const activeSessions = await Session.countDocuments({
+      // Get all courses taught by this teacher
+      const teacherCourses = await Course.find({ teacher_id: teacherId });
+      const courseIds = teacherCourses.map((course) => course._id);
+
+      // Get statistics before deletion for the response
+      const stats = {
+        courses_deleted: courseIds.length,
+        sessions_deleted: 0,
+        attendance_records_deleted: 0,
+        course_students_removed: 0,
+        audit_logs_removed: 0,
+      };
+
+      // Count sessions before deletion
+      stats.sessions_deleted = await Session.countDocuments({
         teacher_id: teacherId,
-        expiry_ts: { $gt: new Date() },
-        is_active: true,
       });
 
-      if (activeSessions > 0) {
-        return res.status(400).json({
-          error:
-            "Cannot delete teacher with active sessions. Please end all sessions first.",
-          active_sessions_count: activeSessions,
+      // Count attendance records before deletion
+      stats.attendance_records_deleted = await Attendance.countDocuments({
+        course_id: { $in: courseIds },
+      });
+
+      // Count course-student enrollments before deletion
+      stats.course_students_removed = await CourseStudent.countDocuments({
+        course_id: { $in: courseIds },
+      });
+
+      // Count audit logs before deletion
+      stats.audit_logs_removed = await AuditLog.countDocuments({
+        actor_id: teacherId,
+      });
+
+      // Start comprehensive deletion process
+      console.log(
+        `Starting comprehensive deletion for teacher ${teacher.name} (${teacher.email})`
+      );
+
+      // 1. Delete all attendance records for teacher's courses
+      if (courseIds.length > 0) {
+        await Attendance.deleteMany({
+          course_id: { $in: courseIds },
         });
+        console.log(
+          `Deleted ${stats.attendance_records_deleted} attendance records`
+        );
       }
 
-      // In production, you might want to archive instead of delete
-      // For now, we'll delete but this removes all associated data
-      await Teacher.findByIdAndDelete(teacherId);
+      // 2. Delete all sessions created by this teacher
+      await Session.deleteMany({
+        teacher_id: teacherId,
+      });
+      console.log(`Deleted ${stats.sessions_deleted} sessions`);
 
-      res.json({ message: "Teacher deleted successfully" });
+      // 3. Remove all student enrollments from teacher's courses
+      if (courseIds.length > 0) {
+        await CourseStudent.deleteMany({
+          course_id: { $in: courseIds },
+        });
+        console.log(
+          `Removed ${stats.course_students_removed} course enrollments`
+        );
+      }
+
+      // 4. Delete all courses taught by this teacher
+      await Course.deleteMany({
+        teacher_id: teacherId,
+      });
+      console.log(`Deleted ${stats.courses_deleted} courses`);
+
+      // 5. Delete audit logs where teacher was the actor
+      await AuditLog.deleteMany({
+        actor_id: teacherId,
+      });
+      console.log(`Deleted ${stats.audit_logs_removed} audit log entries`);
+
+      // 6. Finally, delete the teacher account
+      await Teacher.findByIdAndDelete(teacherId);
+      console.log(`Deleted teacher account for ${teacher.name}`);
+
+      res.json({
+        message: "Teacher and all associated data deleted successfully",
+        teacher_deleted: {
+          name: teacher.name,
+          email: teacher.email,
+          role: teacher.role,
+        },
+        deletion_summary: stats,
+        warning:
+          "This action is irreversible. All data related to this teacher has been permanently removed.",
+      });
     } catch (error) {
-      console.error("Delete teacher error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      console.error("Delete teacher error details:", error);
+      console.error("Error stack:", error.stack);
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to delete teacher and associated data",
+        details: error.message,
+      });
     }
   }
 );
@@ -865,7 +1021,9 @@ router.post(
       const { action, teacher_ids } = req.body;
 
       // Prevent bulk action on current admin
-      if (teacher_ids.includes(req.teacher._id.toString())) {
+      const currentUserId =
+        req.admin?._id?.toString() || req.teacher?._id?.toString();
+      if (teacher_ids.includes(currentUserId)) {
         return res
           .status(400)
           .json({ error: "Cannot perform bulk action on your own account" });
@@ -889,21 +1047,110 @@ router.post(
           break;
 
         case "delete":
-          // Check for active sessions first
-          const activeSessionCount = await Session.countDocuments({
-            teacher_id: { $in: teacher_ids },
-            expiry_ts: { $gt: new Date() },
-            is_active: true,
+          // Get comprehensive statistics before deletion
+          const teachersToDelete = await Teacher.find({
+            _id: { $in: teacher_ids },
           });
 
-          if (activeSessionCount > 0) {
-            return res.status(400).json({
-              error: "Cannot delete teachers with active sessions",
-              active_sessions_count: activeSessionCount,
-            });
+          let totalStats = {
+            teachers_deleted: teachersToDelete.length,
+            courses_deleted: 0,
+            sessions_deleted: 0,
+            attendance_records_deleted: 0,
+            course_students_removed: 0,
+            audit_logs_removed: 0,
+          };
+
+          // Get all courses taught by these teachers
+          const allCourses = await Course.find({
+            teacher_id: { $in: teacher_ids },
+          });
+          const allCourseIds = allCourses.map((course) => course._id);
+          totalStats.courses_deleted = allCourses.length;
+
+          // Count all associated data before deletion
+          totalStats.sessions_deleted = await Session.countDocuments({
+            teacher_id: { $in: teacher_ids },
+          });
+
+          if (allCourseIds.length > 0) {
+            totalStats.attendance_records_deleted =
+              await Attendance.countDocuments({
+                course_id: { $in: allCourseIds },
+              });
+
+            totalStats.course_students_removed =
+              await CourseStudent.countDocuments({
+                course_id: { $in: allCourseIds },
+              });
           }
 
+          totalStats.audit_logs_removed = await AuditLog.countDocuments({
+            actor_id: { $in: teacher_ids },
+          });
+
+          console.log(
+            `Starting bulk deletion for ${teacher_ids.length} teachers`
+          );
+
+          // Perform comprehensive deletion
+          // 1. Delete all attendance records for teachers' courses
+          if (allCourseIds.length > 0) {
+            await Attendance.deleteMany({
+              course_id: { $in: allCourseIds },
+            });
+            console.log(
+              `Bulk deleted ${totalStats.attendance_records_deleted} attendance records`
+            );
+          }
+
+          // 2. Delete all sessions created by these teachers
+          await Session.deleteMany({
+            teacher_id: { $in: teacher_ids },
+          });
+          console.log(`Bulk deleted ${totalStats.sessions_deleted} sessions`);
+
+          // 3. Remove all student enrollments from teachers' courses
+          if (allCourseIds.length > 0) {
+            await CourseStudent.deleteMany({
+              course_id: { $in: allCourseIds },
+            });
+            console.log(
+              `Bulk removed ${totalStats.course_students_removed} course enrollments`
+            );
+          }
+
+          // 4. Delete all courses taught by these teachers
+          await Course.deleteMany({
+            teacher_id: { $in: teacher_ids },
+          });
+          console.log(`Bulk deleted ${totalStats.courses_deleted} courses`);
+
+          // 5. Delete audit logs where teachers were the actors
+          await AuditLog.deleteMany({
+            actor_id: { $in: teacher_ids },
+          });
+          console.log(
+            `Bulk deleted ${totalStats.audit_logs_removed} audit log entries`
+          );
+
+          // 6. Finally, delete the teacher accounts
           result = await Teacher.deleteMany({ _id: { $in: teacher_ids } });
+          console.log(`Bulk deleted ${result.deletedCount} teacher accounts`);
+
+          return res.json({
+            message: `Bulk delete completed successfully`,
+            teachers_deleted: teachersToDelete.map((t) => ({
+              name: t.name,
+              email: t.email,
+              role: t.role,
+            })),
+            deletion_summary: totalStats,
+            affected_count: result.deletedCount,
+            teacher_ids,
+            warning:
+              "This action is irreversible. All data related to these teachers has been permanently removed.",
+          });
           break;
       }
 

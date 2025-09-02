@@ -515,11 +515,15 @@ router.get(
       const { courseId } = req.params;
       const { format } = req.query; // optional: 'summary' or 'detailed' (default: detailed)
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
