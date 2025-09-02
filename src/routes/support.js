@@ -78,7 +78,7 @@ router.post(
       .withMessage("Name must be 2-100 characters"),
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email is required"),
     body("user_type")
       .isIn(["student", "teacher", "admin", "other"])

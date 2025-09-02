@@ -30,7 +30,7 @@ router.post(
       .withMessage("Name must be 2-100 characters"),
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("level")
       .isInt({ min: 100, max: 600 })
@@ -43,11 +43,15 @@ router.post(
       const { courseId } = req.params;
       const { matric_no, name, email, level } = req.body;
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -87,10 +91,11 @@ router.post(
       }
 
       // Add student to course
+      const currentUserId = req.teacher?._id || req.admin?._id || req.user?._id;
       const courseStudent = new CourseStudent({
         course_id: courseId,
         student_id: student._id,
-        added_by: req.teacher._id,
+        added_by: currentUserId,
       });
 
       await courseStudent.save();
@@ -134,7 +139,7 @@ router.post(
       .withMessage("Name must be 2-100 characters"),
     body("students.*.email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("students.*.level")
       .isInt({ min: 100, max: 600 })
@@ -147,11 +152,15 @@ router.post(
       const { courseId } = req.params;
       const { students } = req.body;
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -204,10 +213,12 @@ router.post(
           }
 
           // Add student to course
+          const currentUserId =
+            req.teacher?._id || req.admin?._id || req.user?._id;
           const courseStudent = new CourseStudent({
             course_id: courseId,
             student_id: student._id,
-            added_by: req.teacher._id,
+            added_by: currentUserId,
           });
 
           await courseStudent.save();
@@ -273,11 +284,15 @@ router.get(
       const limit = parseInt(req.query.limit) || 20;
       const skip = (page - 1) * limit;
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -321,11 +336,15 @@ router.delete(
     try {
       const { courseId } = req.params;
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -396,11 +415,15 @@ router.delete(
       const { courseId } = req.params;
       const { student_ids } = req.body;
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -505,11 +528,15 @@ router.delete(
     try {
       const { courseId, studentId } = req.params;
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -530,119 +557,6 @@ router.delete(
       res.json({ message: "Student removed from course successfully" });
     } catch (error) {
       console.error("Remove student error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  }
-);
-
-// Remove student from course
-router.delete(
-  "/:courseId/students/bulk",
-  auth,
-  [
-    param("courseId").isMongoId().withMessage("Valid course ID required"),
-    body("student_ids")
-      .isArray({ min: 1, max: 100 })
-      .withMessage("Student IDs array required (1-100 students)"),
-    body("student_ids.*").isMongoId().withMessage("Valid student ID required"),
-  ],
-  validate,
-  auditLogger("bulk_students_removed_from_course"),
-  async (req, res) => {
-    try {
-      const { courseId } = req.params;
-      const { student_ids } = req.body;
-
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
-
-      if (!course) {
-        return res.status(404).json({ error: "Course not found" });
-      }
-
-      const results = {
-        successful: [],
-        not_found: [],
-        failed: [],
-      };
-
-      // Process each student ID
-      for (const studentId of student_ids) {
-        try {
-          // Find the enrollment
-          const enrollment = await CourseStudent.findOne({
-            course_id: courseId,
-            student_id: studentId,
-          }).populate("student_id", "name email matric_no");
-
-          if (!enrollment) {
-            results.not_found.push({
-              student_id: studentId,
-              reason: "Student not enrolled in this course",
-            });
-            continue;
-          }
-
-          // Delete the enrollment
-          await CourseStudent.deleteOne({
-            course_id: courseId,
-            student_id: studentId,
-          });
-
-          // Delete attendance records for this student in this course's sessions
-          const courseSessions = await Session.find({
-            course_id: courseId,
-          }).select("_id");
-          const sessionIds = courseSessions.map((session) => session._id);
-
-          if (sessionIds.length > 0) {
-            await Attendance.deleteMany({
-              session_id: { $in: sessionIds },
-              student_id: studentId,
-            });
-          }
-
-          results.successful.push({
-            student_id: studentId,
-            name: enrollment.student_id.name,
-            email: enrollment.student_id.email,
-            matric_no: enrollment.student_id.matric_no,
-            attendance_records_cleaned: sessionIds.length > 0,
-          });
-        } catch (error) {
-          console.error(`Error removing student ${studentId}:`, error);
-          results.failed.push({
-            student_id: studentId,
-            reason: error.message || "Processing error",
-          });
-        }
-      }
-
-      const totalProcessed = student_ids.length;
-      const successCount = results.successful.length;
-      const notFoundCount = results.not_found.length;
-      const failedCount = results.failed.length;
-
-      res.json({
-        message: "Bulk student removal completed",
-        summary: {
-          total_processed: totalProcessed,
-          successful: successCount,
-          not_found: notFoundCount,
-          failed: failedCount,
-          course: {
-            id: course._id,
-            title: course.title,
-            course_code: course.course_code,
-          },
-        },
-        results,
-      });
-    } catch (error) {
-      console.error("Bulk remove students error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }
@@ -883,7 +797,7 @@ router.patch(
             attendance.status = status;
             attendance.reason = reason;
             await attendance.save();
-            
+
             results.skipped.push({
               student_id: studentId,
               matric_no: student.matric_no,
@@ -925,10 +839,17 @@ router.patch(
             });
           }
         } catch (error) {
-          console.error(`Error processing student ${studentData.studentId}:`, error);
-          
+          console.error(
+            `Error processing student ${studentData.studentId}:`,
+            error
+          );
+
           // Handle duplicate key error specifically
-          if (error.code === 11000 && error.keyPattern && error.keyPattern.device_fingerprint) {
+          if (
+            error.code === 11000 &&
+            error.keyPattern &&
+            error.keyPattern.device_fingerprint
+          ) {
             results.failed.push({
               student_id: studentData.studentId,
               reason: "Attendance record conflict - duplicate entry",

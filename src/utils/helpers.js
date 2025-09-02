@@ -97,7 +97,8 @@ const formatDate = (date) => {
 
 // Validate email format
 const isValidEmail = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // More comprehensive email regex that accepts dots, dashes, underscores, and plus signs
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   return emailRegex.test(email);
 };
 

@@ -4,10 +4,13 @@ const Course = require("../models/Course");
 const Session = require("../models/Session");
 const CourseStudent = require("../models/CourseStudent");
 const Attendance = require("../models/Attendance");
+const Teacher = require("../models/Teacher");
 const { auth } = require("../middleware/auth");
 const validate = require("../middleware/validation");
 const auditLogger = require("../middleware/auditLogger");
+const EmailService = require("../services/emailService");
 
+const emailService = new EmailService();
 const router = express.Router();
 
 // Create new course
@@ -34,16 +37,59 @@ router.post(
         return true;
       })
       .withMessage("Level must be between 100 and 600 in increments of 100"),
+    // Admin must provide lecturer_id when creating courses
+    body("lecturer_id")
+      .if((value, { req }) => req.userType === "admin")
+      .isMongoId()
+      .withMessage("Valid lecturer ID required when admin creates course"),
   ],
   validate,
   auditLogger("course_created"),
   async (req, res) => {
     try {
-      const { course_code, title, level } = req.body;
+      const { course_code, title, level, lecturer_id } = req.body;
 
-      // No longer checking for unique course code - different lecturers can use same code
+      // Check for unique course code - prevent duplicate course codes
+      const existingCourse = await Course.findOne({
+        course_code: course_code.toUpperCase(),
+      });
+
+      if (existingCourse) {
+        return res.status(400).json({
+          error: "Course code already exists",
+          message: `A course with code "${course_code.toUpperCase()}" already exists. Please choose a different course code.`,
+        });
+      }
+
+      // Determine teacher ID based on user type
+      let assignedTeacherId;
+
+      if (req.userType === "admin") {
+        // Admin must provide lecturer_id
+        if (!lecturer_id) {
+          return res.status(400).json({
+            error: "Lecturer ID required",
+            message: "Admin must specify a lecturer for the course",
+          });
+        }
+
+        // Verify the lecturer exists
+        const lecturer = await Teacher.findById(lecturer_id);
+        if (!lecturer) {
+          return res.status(404).json({
+            error: "Lecturer not found",
+            message: "The specified lecturer does not exist",
+          });
+        }
+
+        assignedTeacherId = lecturer_id;
+      } else {
+        // Teacher creating their own course
+        assignedTeacherId = req.teacher._id;
+      }
+
       const course = new Course({
-        teacher_id: req.teacher._id,
+        teacher_id: assignedTeacherId,
         course_code: course_code.toUpperCase(),
         title,
         level,
@@ -53,6 +99,26 @@ router.post(
 
       // Populate teacher information
       await course.populate("teacher_id", "name email");
+
+      // Send email notification if admin assigned course to lecturer
+      if (req.userType === "admin" && lecturer_id) {
+        try {
+          await emailService.sendCourseAssignmentNotification({
+            lecturer_email: course.teacher_id.email,
+            lecturer_name: course.teacher_id.name,
+            course_title: course.title,
+            course_code: course.course_code,
+            level: course.level,
+            assignment_date: new Date(),
+            assigned_by: req.admin?.name || "System Administrator",
+            is_reassignment: false,
+            reason: "New course assignment",
+          });
+        } catch (emailError) {
+          console.error("Failed to send course assignment email:", emailError);
+          // Don't fail the course creation if email fails
+        }
+      }
 
       res.status(201).json({
         message: "Course created successfully",
@@ -73,8 +139,13 @@ router.get("/", auth, async (req, res) => {
     const skip = (page - 1) * limit;
     const { level, search } = req.query;
 
-    // Build query
-    const query = { teacher_id: req.teacher._id };
+    // Build query - teachers see only their courses, admins see all courses
+    let query = {};
+
+    // If teacher, only show their courses. If admin, show all courses
+    if (req.teacher && req.userType !== "admin") {
+      query.teacher_id = req.teacher._id;
+    }
 
     if (level) {
       query.level = parseInt(level);
@@ -147,7 +218,7 @@ router.get(
       let query = { _id: req.params.id };
 
       // If teacher, only show their courses. If admin, show all courses
-      if (req.teacher) {
+      if (req.teacher && req.userType !== "admin") {
         query.teacher_id = req.teacher._id;
       }
 
@@ -323,21 +394,76 @@ router.patch(
         return true;
       })
       .withMessage("Level must be between 100 and 600 in increments of 100"),
+    body("lecturer_id")
+      .optional()
+      .isMongoId()
+      .withMessage("Valid lecturer ID required"),
   ],
   validate,
   auditLogger("course_updated"),
   async (req, res) => {
     try {
-      const { course_code, title, level } = req.body;
+      const { course_code, title, level, lecturer_id } = req.body;
 
       // Find course
-      const course = await Course.findOne({
-        _id: req.params.id,
-        teacher_id: req.teacher._id,
-      });
+      let courseQuery = { _id: req.params.id };
+
+      // If teacher, only access their courses. If admin, access all courses
+      if (req.teacher && req.userType !== "admin") {
+        courseQuery.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(courseQuery);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Check if course code is being changed and if it's unique
+      if (course_code && course_code.toUpperCase() !== course.course_code) {
+        const existingCourse = await Course.findOne({
+          course_code: course_code.toUpperCase(),
+          _id: { $ne: req.params.id }, // Exclude current course
+        });
+
+        if (existingCourse) {
+          return res.status(400).json({
+            error: "Course code already exists",
+            message: `A course with code "${course_code.toUpperCase()}" already exists. Please choose a different course code.`,
+          });
+        }
+      }
+
+      // Handle lecturer assignment change (admin only)
+      let lecturerChanged = false;
+      let oldLecturerInfo = null;
+      let newLecturerInfo = null;
+
+      if (lecturer_id && req.userType === "admin") {
+        const newLecturer = await Teacher.findById(lecturer_id);
+
+        if (!newLecturer) {
+          return res.status(404).json({
+            error: "Lecturer not found",
+            message: "The specified lecturer does not exist",
+          });
+        }
+
+        // Check if lecturer is actually changing
+        if (course.teacher_id.toString() !== lecturer_id) {
+          // Store old lecturer info for email
+          const oldLecturer = await Teacher.findById(course.teacher_id);
+          oldLecturerInfo = oldLecturer;
+          newLecturerInfo = newLecturer;
+          lecturerChanged = true;
+        }
+
+        course.teacher_id = lecturer_id;
+      } else if (lecturer_id && req.userType !== "admin") {
+        return res.status(403).json({
+          error: "Access denied",
+          message: "Only administrators can change course lecturer assignment",
+        });
       }
 
       // Update fields
@@ -347,6 +473,27 @@ router.patch(
 
       await course.save();
       await course.populate("teacher_id", "name email");
+
+      // Send email notification if lecturer was changed
+      if (lecturerChanged && newLecturerInfo) {
+        try {
+          await emailService.sendCourseAssignmentNotification({
+            lecturer_email: newLecturerInfo.email,
+            lecturer_name: newLecturerInfo.name,
+            course_title: course.title,
+            course_code: course.course_code,
+            level: course.level,
+            assignment_date: new Date(),
+            assigned_by: req.admin?.name || "System Administrator",
+            is_reassignment: true,
+            previous_lecturer: oldLecturerInfo?.name || "Previous Lecturer",
+            reason: "Course lecturer assignment updated",
+          });
+        } catch (emailError) {
+          console.error("Failed to send course update email:", emailError);
+          // Don't fail the update if email fails
+        }
+      }
 
       res.json({
         message: "Course updated successfully",
@@ -368,10 +515,14 @@ router.delete(
   auditLogger("course_deleted"),
   async (req, res) => {
     try {
-      const course = await Course.findOne({
-        _id: req.params.id,
-        teacher_id: req.teacher._id,
-      });
+      let courseQuery = { _id: req.params.id };
+
+      // If teacher, only access their courses. If admin, access all courses
+      if (req.teacher && req.userType !== "admin") {
+        courseQuery.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(courseQuery);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -419,10 +570,17 @@ router.post(
       const { courseId, sourceCourseId } = req.params;
       const { student_ids } = req.body;
 
-      // Verify both courses belong to the teacher
+      // Verify both courses exist and user has access
+      let courseQuery = {};
+
+      // If teacher, only access their courses. If admin, access all courses
+      if (req.teacher && req.userType !== "admin") {
+        courseQuery.teacher_id = req.teacher._id;
+      }
+
       const [targetCourse, sourceCourse] = await Promise.all([
-        Course.findOne({ _id: courseId, teacher_id: req.teacher._id }),
-        Course.findOne({ _id: sourceCourseId, teacher_id: req.teacher._id }),
+        Course.findOne({ _id: courseId, ...courseQuery }),
+        Course.findOne({ _id: sourceCourseId, ...courseQuery }),
       ]);
 
       if (!targetCourse) {
@@ -797,6 +955,127 @@ router.get(
       });
     } catch (error) {
       console.error("Generate attendance report error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Admin route: Reassign course to another lecturer
+router.patch(
+  "/:courseId/reassign-lecturer",
+  auth,
+  [
+    param("courseId").isMongoId().withMessage("Valid course ID required"),
+    body("new_lecturer_id")
+      .isMongoId()
+      .withMessage("Valid new lecturer ID required"),
+    body("reason")
+      .optional()
+      .trim()
+      .isLength({ min: 3, max: 500 })
+      .withMessage("Reason must be 3-500 characters if provided"),
+  ],
+  validate,
+  auditLogger("course_reassigned"),
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const { new_lecturer_id, reason } = req.body;
+
+      // Only admins can reassign courses
+      if (req.userType !== "admin") {
+        return res.status(403).json({
+          error: "Access denied",
+          message: "Only administrators can reassign courses",
+        });
+      }
+
+      // Verify course exists
+      const course = await Course.findById(courseId).populate(
+        "teacher_id",
+        "name email"
+      );
+
+      if (!course) {
+        return res.status(404).json({
+          error: "Course not found",
+          message: "The specified course does not exist",
+        });
+      }
+
+      // Verify new lecturer exists
+      const newLecturer = await Teacher.findById(new_lecturer_id);
+
+      if (!newLecturer) {
+        return res.status(404).json({
+          error: "Lecturer not found",
+          message: "The specified new lecturer does not exist",
+        });
+      }
+
+      // Check if already assigned to the same lecturer
+      if (course.teacher_id._id.toString() === new_lecturer_id) {
+        return res.status(400).json({
+          error: "Same lecturer",
+          message: "Course is already assigned to this lecturer",
+        });
+      }
+
+      // Store old lecturer info for response
+      const oldLecturer = course.teacher_id;
+
+      // Update course assignment
+      course.teacher_id = new_lecturer_id;
+      await course.save();
+
+      // Populate new lecturer info
+      await course.populate("teacher_id", "name email");
+
+      // Send email notification to the new lecturer
+      try {
+        await emailService.sendCourseAssignmentNotification({
+          lecturer_email: course.teacher_id.email,
+          lecturer_name: course.teacher_id.name,
+          course_title: course.title,
+          course_code: course.course_code,
+          level: course.level,
+          assignment_date: new Date(),
+          assigned_by: req.admin?.name || "System Administrator",
+          is_reassignment: true,
+          previous_lecturer: oldLecturer.name,
+          reason: reason || "Course reassignment",
+        });
+      } catch (emailError) {
+        console.error("Failed to send course reassignment email:", emailError);
+        // Don't fail the reassignment if email fails
+      }
+
+      res.json({
+        message: "Course reassigned successfully",
+        course: {
+          id: course._id,
+          course_code: course.course_code,
+          title: course.title,
+          level: course.level,
+        },
+        reassignment: {
+          from: {
+            id: oldLecturer._id,
+            name: oldLecturer.name,
+            email: oldLecturer.email,
+          },
+          to: {
+            id: course.teacher_id._id,
+            name: course.teacher_id.name,
+            email: course.teacher_id.email,
+          },
+          reason: reason || "No reason provided",
+          reassigned_at: new Date(),
+          reassigned_by: req.admin._id,
+        },
+      });
+    } catch (error) {
+      console.error("Course reassignment error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   }

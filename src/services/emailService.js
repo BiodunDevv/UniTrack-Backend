@@ -376,6 +376,65 @@ class EmailService {
       throw error;
     }
   }
+
+  async sendCourseAssignmentNotification({
+    lecturer_email,
+    lecturer_name,
+    course_title,
+    course_code,
+    level,
+    assignment_date,
+    assigned_by,
+    is_reassignment = false,
+    previous_lecturer = null,
+    reason = null,
+    login_url = process.env.FRONTEND_URL || "http://localhost:3000",
+  }) {
+    try {
+      const template = await this.loadTemplate("course-assignment");
+
+      const html = template({
+        lecturer_name,
+        course_title,
+        course_code,
+        level,
+        assignment_date: new Date(assignment_date).toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        assigned_by,
+        is_reassignment,
+        previous_lecturer,
+        reason,
+        login_url,
+        assignment_timestamp: new Date().toLocaleString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZoneName: "short",
+        }),
+      });
+
+      const mailOptions = {
+        from: process.env.EMAIL_FROM,
+        to: lecturer_email,
+        subject: `Course Assignment: ${course_code} - ${course_title}`,
+        html: html,
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log("Course assignment notification sent:", info.messageId);
+      return info;
+    } catch (error) {
+      console.error("Failed to send course assignment notification:", error);
+      throw error;
+    }
+  }
 }
 
 module.exports = EmailService;

@@ -373,7 +373,7 @@ router.post(
       .withMessage("Name must be 2-100 characters"),
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
   ],
   validate,
@@ -437,7 +437,7 @@ router.post(
       .withMessage("Each teacher name must be 2-100 characters"),
     body("teachers.*.email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Each teacher must have a valid email"),
   ],
   validate,
@@ -728,7 +728,7 @@ router.patch(
     body("email")
       .optional()
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("role")
       .optional()

@@ -89,7 +89,7 @@ const seedDatabase = async () => {
     });
     if (!teacherExists) {
       const teacher = new Teacher({
-        name: "Dr. Jane Smith",
+        name: "Jane Smith",
         email: "muhammedabiodun42@gmail.com",
         password_hash: "balikiss12", // Will be hashed by the pre-save middleware
         role: "teacher",

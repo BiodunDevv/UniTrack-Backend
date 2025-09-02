@@ -31,7 +31,7 @@ router.post(
       .withMessage("Name must be 2-100 characters"),
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("password")
       .isLength({ min: 8 })
@@ -180,7 +180,7 @@ router.post(
   [
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("password").notEmpty().withMessage("Password required"),
   ],
@@ -313,7 +313,7 @@ router.post(
   [
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("verificationToken")
       .optional()
@@ -475,7 +475,7 @@ router.post(
   [
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("purpose")
       .isIn(["password_reset", "login"])
@@ -527,7 +527,7 @@ router.post(
   [
     body("email")
       .isEmail()
-      .normalizeEmail()
+      .normalizeEmail({ gmail_remove_dots: false })
       .withMessage("Valid email required"),
     body("otp").isLength({ min: 6, max: 6 }).withMessage("Valid OTP required"),
     body("purpose")
@@ -586,7 +586,7 @@ router.post(
 
 /**
  * Profile Management Routes
- * 
+ *
  * These routes allow both teachers and admins to manage their profile settings.
  * Features:
  * - Update name
@@ -615,7 +615,9 @@ router.put(
       .isLength({ min: 8 })
       .withMessage("New password must be at least 8 characters")
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
-      .withMessage("New password must contain at least one uppercase letter, one lowercase letter, and one number"),
+      .withMessage(
+        "New password must contain at least one uppercase letter, one lowercase letter, and one number"
+      ),
     body("confirmPassword")
       .optional()
       .custom((value, { req }) => {
@@ -623,7 +625,7 @@ router.put(
           throw new Error("Password confirmation does not match new password");
         }
         return true;
-      })
+      }),
   ],
   validate,
   auditLogger("profile_update"),
@@ -635,13 +637,13 @@ router.put(
 
       // Determine which model to use based on user role
       const UserModel = userRole === "admin" ? Admin : Teacher;
-      
+
       // Find the user
       const user = await UserModel.findById(userId);
       if (!user) {
         return res.status(404).json({
           error: "User not found",
-          details: ["Your account may have been deleted or deactivated"]
+          details: ["Your account may have been deleted or deactivated"],
         });
       }
 
@@ -650,16 +652,21 @@ router.put(
         if (!currentPassword) {
           return res.status(400).json({
             error: "Current password required",
-            details: ["You must provide your current password to set a new one"]
+            details: [
+              "You must provide your current password to set a new one",
+            ],
           });
         }
 
         // Verify current password
-        const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password_hash);
+        const isCurrentPasswordValid = await bcrypt.compare(
+          currentPassword,
+          user.password_hash
+        );
         if (!isCurrentPasswordValid) {
           return res.status(400).json({
             error: "Invalid current password",
-            details: ["The current password you entered is incorrect"]
+            details: ["The current password you entered is incorrect"],
           });
         }
 
@@ -676,7 +683,7 @@ router.put(
       if (!name && !newPassword) {
         return res.status(400).json({
           error: "No changes provided",
-          details: ["Please provide either a new name or password to update"]
+          details: ["Please provide either a new name or password to update"],
         });
       }
 
@@ -689,7 +696,7 @@ router.put(
         name: user.name,
         email: user.email,
         role: user.role || userRole,
-        updated_at: new Date()
+        updated_at: new Date(),
       };
 
       // Add role-specific data
@@ -707,85 +714,83 @@ router.put(
         data: responseData,
         changes: {
           name_updated: !!name,
-          password_updated: !!newPassword
-        }
+          password_updated: !!newPassword,
+        },
       });
-
     } catch (error) {
       console.error("Profile update error:", error);
-      
+
       // Handle validation errors
       if (error.name === "ValidationError") {
-        const validationErrors = Object.values(error.errors).map(err => err.message);
+        const validationErrors = Object.values(error.errors).map(
+          (err) => err.message
+        );
         return res.status(400).json({
           error: "Validation failed",
-          details: validationErrors
+          details: validationErrors,
         });
       }
 
       res.status(500).json({
         error: "Internal server error",
-        details: ["Failed to update profile. Please try again later."]
+        details: ["Failed to update profile. Please try again later."],
       });
     }
   }
 );
 
 // Get current user profile - for both teachers and admins
-router.get(
-  "/profile",
-  auth,
-  async (req, res) => {
-    try {
-      const userId = req.user.id;
-      const userRole = req.user.role;
+router.get("/profile", auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
 
-      // Determine which model to use based on user role
-      const UserModel = userRole === "admin" ? Admin : Teacher;
-      
-      // Find the user (excluding password)
-      const user = await UserModel.findById(userId).select("-password_hash -otp -otp_expires_at");
-      
-      if (!user) {
-        return res.status(404).json({
-          error: "User not found",
-          details: ["Your account may have been deleted or deactivated"]
-        });
-      }
+    // Determine which model to use based on user role
+    const UserModel = userRole === "admin" ? Admin : Teacher;
 
-      // Prepare response data
-      const responseData = {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role || userRole,
-        created_at: user.created_at,
-        last_login: user.last_login
-      };
+    // Find the user (excluding password)
+    const user = await UserModel.findById(userId).select(
+      "-password_hash -otp -otp_expires_at"
+    );
 
-      // Add role-specific data
-      if (userRole === "admin") {
-        responseData.is_super_admin = user.is_super_admin;
-        responseData.status = user.status;
-        responseData.permissions = user.permissions;
-        responseData.email_verified = user.email_verified;
-      } else {
-        responseData.email_verified = user.email_verified;
-      }
-
-      res.json({
-        success: true,
-        data: responseData
-      });
-
-    } catch (error) {
-      console.error("Get profile error:", error);
-      res.status(500).json({
-        error: "Internal server error",
-        details: ["Failed to retrieve profile. Please try again later."]
+    if (!user) {
+      return res.status(404).json({
+        error: "User not found",
+        details: ["Your account may have been deleted or deactivated"],
       });
     }
+
+    // Prepare response data
+    const responseData = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role || userRole,
+      created_at: user.created_at,
+      last_login: user.last_login,
+    };
+
+    // Add role-specific data
+    if (userRole === "admin") {
+      responseData.is_super_admin = user.is_super_admin;
+      responseData.status = user.status;
+      responseData.permissions = user.permissions;
+      responseData.email_verified = user.email_verified;
+    } else {
+      responseData.email_verified = user.email_verified;
+    }
+
+    res.json({
+      success: true,
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("Get profile error:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      details: ["Failed to retrieve profile. Please try again later."],
+    });
   }
-);
+});
 
 module.exports = router;
