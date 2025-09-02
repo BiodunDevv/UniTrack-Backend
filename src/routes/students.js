@@ -989,11 +989,15 @@ router.get(
     try {
       const { courseId, studentId } = req.params;
 
-      // Verify course belongs to teacher
-      const course = await Course.findOne({
-        _id: courseId,
-        teacher_id: req.teacher._id,
-      });
+      // Verify course access - teachers can only access their courses, admins can access any course
+      let query = { _id: courseId };
+
+      // If teacher, only show their courses. If admin, show all courses
+      if (req.teacher && req.userType !== "admin") {
+        query.teacher_id = req.teacher._id;
+      }
+
+      const course = await Course.findOne(query);
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
@@ -1013,7 +1017,6 @@ router.get(
       // Calculate attendance statistics
       const totalSessions = await Session.countDocuments({
         course_id: courseId,
-        teacher_id: req.teacher._id,
       });
 
       const presentCount = attendanceRecords.filter(
