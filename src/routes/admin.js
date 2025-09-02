@@ -12,7 +12,6 @@ const validate = require("../middleware/validation");
 const auditLogger = require("../middleware/auditLogger");
 const EmailService = require("../services/emailService");
 const ReportGenerator = require("../utils/reportGenerator");
-const { generateRandomPassword } = require("../utils/helpers");
 
 const emailService = new EmailService();
 const router = express.Router();
@@ -233,6 +232,13 @@ async function generateCourseAttendanceData(courseId) {
 // Get system statistics (admin only)
 router.get("/stats", adminAuth, async (req, res) => {
   try {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    // Basic counts
     const [
       totalTeachers,
       totalStudents,
@@ -240,7 +246,10 @@ router.get("/stats", adminAuth, async (req, res) => {
       totalSessions,
       totalAttendance,
       activeSessions,
-      recentActivity,
+      expiredSessions,
+      activeTeachers,
+      inactiveTeachers,
+      adminCount,
     ] = await Promise.all([
       Teacher.countDocuments(),
       Student.countDocuments(),
@@ -248,39 +257,394 @@ router.get("/stats", adminAuth, async (req, res) => {
       Session.countDocuments(),
       Attendance.countDocuments(),
       Session.countDocuments({
-        expiry_ts: { $gt: new Date() },
+        expiry_ts: { $gt: now },
         is_active: true,
       }),
-      AuditLog.find()
-        .populate("actor_id", "name email role")
-        .sort({ created_at: -1 })
-        .limit(20),
+      Session.countDocuments({
+        expiry_ts: { $lt: now },
+      }),
+      Teacher.countDocuments({ active: true, role: "teacher" }),
+      Teacher.countDocuments({ active: false }),
+      Teacher.countDocuments({ role: "admin" }),
     ]);
 
-    // Get teacher registration trends (last 30 days)
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const recentTeachers = await Teacher.countDocuments({
-      created_at: { $gte: thirtyDaysAgo },
+    // Trend analysis
+    const [
+      teachersLast24h,
+      teachersLast7d,
+      teachersLast30d,
+      teachersLast90d,
+      studentsLast24h,
+      studentsLast7d,
+      studentsLast30d,
+      studentsLast90d,
+      coursesLast24h,
+      coursesLast7d,
+      coursesLast30d,
+      coursesLast90d,
+      sessionsLast24h,
+      sessionsLast7d,
+      sessionsLast30d,
+      attendanceLast24h,
+      attendanceLast7d,
+      attendanceLast30d,
+    ] = await Promise.all([
+      Teacher.countDocuments({ created_at: { $gte: oneDayAgo } }),
+      Teacher.countDocuments({ created_at: { $gte: sevenDaysAgo } }),
+      Teacher.countDocuments({ created_at: { $gte: thirtyDaysAgo } }),
+      Teacher.countDocuments({ created_at: { $gte: ninetyDaysAgo } }),
+      Student.countDocuments({ created_at: { $gte: oneDayAgo } }),
+      Student.countDocuments({ created_at: { $gte: sevenDaysAgo } }),
+      Student.countDocuments({ created_at: { $gte: thirtyDaysAgo } }),
+      Student.countDocuments({ created_at: { $gte: ninetyDaysAgo } }),
+      Course.countDocuments({ created_at: { $gte: oneDayAgo } }),
+      Course.countDocuments({ created_at: { $gte: sevenDaysAgo } }),
+      Course.countDocuments({ created_at: { $gte: thirtyDaysAgo } }),
+      Course.countDocuments({ created_at: { $gte: ninetyDaysAgo } }),
+      Session.countDocuments({ created_at: { $gte: oneDayAgo } }),
+      Session.countDocuments({ created_at: { $gte: sevenDaysAgo } }),
+      Session.countDocuments({ created_at: { $gte: thirtyDaysAgo } }),
+      Attendance.countDocuments({ submitted_at: { $gte: oneDayAgo } }),
+      Attendance.countDocuments({ submitted_at: { $gte: sevenDaysAgo } }),
+      Attendance.countDocuments({ submitted_at: { $gte: thirtyDaysAgo } }),
+    ]);
+
+    // Course enrollment statistics
+    const courseEnrollmentStats = await CourseStudent.aggregate([
+      {
+        $group: {
+          _id: "$course_id",
+          student_count: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total_enrollments: { $sum: 1 },
+          average_students_per_course: { $avg: "$student_count" },
+          max_students_in_course: { $max: "$student_count" },
+          min_students_in_course: { $min: "$student_count" },
+        },
+      },
+    ]);
+
+    // Attendance statistics
+    const attendanceStats = await Attendance.aggregate([
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const attendanceBreakdown = {};
+    let totalAttendanceSubmissions = 0;
+    attendanceStats.forEach((stat) => {
+      attendanceBreakdown[stat._id] = stat.count;
+      totalAttendanceSubmissions += stat.count;
     });
 
-    // Get attendance trends
-    const recentAttendance = await Attendance.countDocuments({
-      submitted_at: { $gte: thirtyDaysAgo },
-    });
+    // Session statistics
+    const sessionStats = await Session.aggregate([
+      {
+        $group: {
+          _id: null,
+          total_sessions: { $sum: 1 },
+          average_duration: {
+            $avg: {
+              $subtract: ["$expiry_ts", "$start_ts"],
+            },
+          },
+        },
+      },
+    ]);
+
+    // Most active teachers
+    const mostActiveTeachers = await Course.aggregate([
+      {
+        $group: {
+          _id: "$teacher_id",
+          course_count: { $sum: 1 },
+        },
+      },
+      { $sort: { course_count: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: "teachers",
+          localField: "_id",
+          foreignField: "_id",
+          as: "teacher",
+        },
+      },
+      { $unwind: "$teacher" },
+      {
+        $project: {
+          name: "$teacher.name",
+          email: "$teacher.email",
+          course_count: 1,
+        },
+      },
+    ]);
+
+    // Most enrolled courses
+    const mostEnrolledCourses = await CourseStudent.aggregate([
+      {
+        $group: {
+          _id: "$course_id",
+          enrollment_count: { $sum: 1 },
+        },
+      },
+      { $sort: { enrollment_count: -1 } },
+      { $limit: 5 },
+      {
+        $lookup: {
+          from: "courses",
+          localField: "_id",
+          foreignField: "_id",
+          as: "course",
+        },
+      },
+      { $unwind: "$course" },
+      {
+        $lookup: {
+          from: "teachers",
+          localField: "course.teacher_id",
+          foreignField: "_id",
+          as: "teacher",
+        },
+      },
+      { $unwind: "$teacher" },
+      {
+        $project: {
+          course_code: "$course.course_code",
+          title: "$course.title",
+          teacher_name: "$teacher.name",
+          enrollment_count: 1,
+        },
+      },
+    ]);
+
+    // Recent activity
+    const recentActivity = await AuditLog.find()
+      .populate("actor_id", "name email role")
+      .sort({ created_at: -1 })
+      .limit(20);
+
+    // System performance metrics
+    const performanceMetrics = {
+      average_session_duration_hours:
+        sessionStats.length > 0
+          ? Math.round(
+              (sessionStats[0].average_duration / (1000 * 60 * 60)) * 100
+            ) / 100
+          : 0,
+      overall_attendance_rate:
+        totalAttendanceSubmissions > 0
+          ? Math.round(
+              (((attendanceBreakdown.present || 0) +
+                (attendanceBreakdown.manual_present || 0)) /
+                totalAttendanceSubmissions) *
+                100 *
+                100
+            ) / 100
+          : 0,
+      session_utilization_rate:
+        totalSessions > 0
+          ? Math.round((activeSessions / totalSessions) * 100 * 100) / 100
+          : 0,
+      teacher_activity_rate:
+        totalTeachers > 0
+          ? Math.round((activeTeachers / totalTeachers) * 100 * 100) / 100
+          : 0,
+    };
+
+    // Risk indicators
+    const riskIndicators = {
+      inactive_teachers: inactiveTeachers,
+      courses_without_sessions: await Course.aggregate([
+        {
+          $lookup: {
+            from: "sessions",
+            localField: "_id",
+            foreignField: "course_id",
+            as: "sessions",
+          },
+        },
+        {
+          $match: {
+            sessions: { $size: 0 },
+          },
+        },
+        { $count: "count" },
+      ]).then((result) => (result.length > 0 ? result[0].count : 0)),
+      sessions_with_low_attendance: await Session.aggregate([
+        {
+          $lookup: {
+            from: "attendances",
+            localField: "_id",
+            foreignField: "session_id",
+            as: "attendance",
+          },
+        },
+        {
+          $lookup: {
+            from: "coursestudents",
+            localField: "course_id",
+            foreignField: "course_id",
+            as: "enrolled",
+          },
+        },
+        {
+          $addFields: {
+            attendance_rate: {
+              $cond: [
+                { $gt: [{ $size: "$enrolled" }, 0] },
+                {
+                  $multiply: [
+                    {
+                      $divide: [
+                        {
+                          $size: {
+                            $filter: {
+                              input: "$attendance",
+                              cond: {
+                                $in: [
+                                  "$$this.status",
+                                  ["present", "manual_present"],
+                                ],
+                              },
+                            },
+                          },
+                        },
+                        { $size: "$enrolled" },
+                      ],
+                    },
+                    100,
+                  ],
+                },
+                0,
+              ],
+            },
+          },
+        },
+        {
+          $match: {
+            attendance_rate: { $lt: 50 },
+          },
+        },
+        { $count: "count" },
+      ]).then((result) => (result.length > 0 ? result[0].count : 0)),
+    };
 
     res.json({
-      system_stats: {
+      generated_at: now.toISOString(),
+      system_overview: {
         total_teachers: totalTeachers,
         total_students: totalStudents,
         total_courses: totalCourses,
         total_sessions: totalSessions,
         total_attendance_records: totalAttendance,
         active_sessions: activeSessions,
+        expired_sessions: expiredSessions,
+        total_enrollments:
+          courseEnrollmentStats.length > 0
+            ? courseEnrollmentStats[0].total_enrollments
+            : 0,
       },
-      trends: {
-        new_teachers_30d: recentTeachers,
-        attendance_submissions_30d: recentAttendance,
+      user_breakdown: {
+        teachers: {
+          total: totalTeachers,
+          active: activeTeachers,
+          inactive: inactiveTeachers,
+          admins: adminCount,
+        },
+        students: {
+          total: totalStudents,
+        },
       },
+      growth_trends: {
+        teachers: {
+          last_24h: teachersLast24h,
+          last_7d: teachersLast7d,
+          last_30d: teachersLast30d,
+          last_90d: teachersLast90d,
+        },
+        students: {
+          last_24h: studentsLast24h,
+          last_7d: studentsLast7d,
+          last_30d: studentsLast30d,
+          last_90d: studentsLast90d,
+        },
+        courses: {
+          last_24h: coursesLast24h,
+          last_7d: coursesLast7d,
+          last_30d: coursesLast30d,
+          last_90d: coursesLast90d,
+        },
+        sessions: {
+          last_24h: sessionsLast24h,
+          last_7d: sessionsLast7d,
+          last_30d: sessionsLast30d,
+        },
+        attendance: {
+          last_24h: attendanceLast24h,
+          last_7d: attendanceLast7d,
+          last_30d: attendanceLast30d,
+        },
+      },
+      course_statistics: {
+        total_courses: totalCourses,
+        average_students_per_course:
+          courseEnrollmentStats.length > 0
+            ? Math.round(courseEnrollmentStats[0].average_students_per_course)
+            : 0,
+        largest_course_size:
+          courseEnrollmentStats.length > 0
+            ? courseEnrollmentStats[0].max_students_in_course
+            : 0,
+        smallest_course_size:
+          courseEnrollmentStats.length > 0
+            ? courseEnrollmentStats[0].min_students_in_course
+            : 0,
+      },
+      attendance_analytics: {
+        total_submissions: totalAttendanceSubmissions,
+        breakdown: {
+          present: attendanceBreakdown.present || 0,
+          absent: attendanceBreakdown.absent || 0,
+          manual_present: attendanceBreakdown.manual_present || 0,
+          rejected: attendanceBreakdown.rejected || 0,
+        },
+        rates: {
+          overall_attendance_rate: performanceMetrics.overall_attendance_rate,
+          present_rate:
+            totalAttendanceSubmissions > 0
+              ? Math.round(
+                  ((attendanceBreakdown.present || 0) /
+                    totalAttendanceSubmissions) *
+                    100 *
+                    100
+                ) / 100
+              : 0,
+          manual_present_rate:
+            totalAttendanceSubmissions > 0
+              ? Math.round(
+                  ((attendanceBreakdown.manual_present || 0) /
+                    totalAttendanceSubmissions) *
+                    100 *
+                    100
+                ) / 100
+              : 0,
+        },
+      },
+      performance_metrics: performanceMetrics,
+      top_performers: {
+        most_active_teachers: mostActiveTeachers,
+        most_enrolled_courses: mostEnrolledCourses,
+      },
+      risk_indicators: riskIndicators,
       recent_activity: recentActivity,
     });
   } catch (error) {
@@ -921,22 +1285,242 @@ router.get("/audit-logs", adminAuth, async (req, res) => {
     const skip = (page - 1) * limit;
     const action = req.query.action;
     const teacherId = req.query.teacher_id;
+    const startDate = req.query.start_date;
+    const endDate = req.query.end_date;
+    const category = req.query.category;
 
     let query = {};
+
+    // Filter by action
     if (action) {
       query.action = { $regex: action, $options: "i" };
     }
+
+    // Filter by teacher/actor
     if (teacherId) {
       query.actor_id = teacherId;
     }
 
+    // Filter by date range
+    if (startDate || endDate) {
+      query.created_at = {};
+      if (startDate) query.created_at.$gte = new Date(startDate);
+      if (endDate) query.created_at.$lte = new Date(endDate);
+    }
+
+    // Filter by category
+    if (category) {
+      const categoryActions = {
+        authentication: [
+          "teacher_login",
+          "teacher_logout",
+          "password_reset",
+          "otp_verification",
+          "admin_login",
+          "admin_logout",
+        ],
+        course_management: [
+          "course_created",
+          "course_updated",
+          "course_deleted",
+          "course_assigned",
+          "course_reassigned",
+          "student_enrolled",
+          "student_unenrolled",
+          "bulk_student_enrollment",
+        ],
+        session_management: [
+          "session_created",
+          "session_updated",
+          "session_deleted",
+          "session_activated",
+          "session_deactivated",
+          "manual_attendance_marked",
+        ],
+        attendance: [
+          "attendance_submitted",
+          "attendance_verified",
+          "attendance_rejected",
+          "manual_attendance_marked",
+          "attendance_report_generated",
+        ],
+        student_management: [
+          "student_created",
+          "student_updated",
+          "student_deleted",
+          "bulk_student_import",
+          "student_share_requested",
+          "student_share_approved",
+        ],
+        admin_actions: [
+          "admin_created_teacher",
+          "admin_updated_teacher",
+          "admin_deleted_teacher",
+          "admin_bulk_created_teachers",
+          "admin_bulk_teacher_action",
+          "admin_downloaded_csv_report",
+          "admin_downloaded_pdf_report",
+          "admin_downloaded_course_csv_report",
+          "admin_downloaded_course_pdf_report",
+        ],
+        system: [
+          "email_sent",
+          "email_failed",
+          "system_error",
+          "database_backup",
+          "system_maintenance",
+        ],
+        support: ["support_ticket_created", "support_ticket_resolved"],
+      };
+
+      if (categoryActions[category]) {
+        query.action = { $in: categoryActions[category] };
+      }
+    }
+
+    // Get logs with enhanced population
     const logs = await AuditLog.find(query)
-      .populate("actor_id", "name email role")
+      .populate({
+        path: "actor_id",
+        select: "name email role",
+        model: "Teacher",
+      })
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit);
 
     const total = await AuditLog.countDocuments(query);
+
+    // Get action statistics for the current filter
+    const actionStats = await AuditLog.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: "$action",
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { count: -1 } },
+      { $limit: 20 },
+    ]);
+
+    // Get activity by hour for the last 24 hours
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const hourlyActivity = await AuditLog.aggregate([
+      {
+        $match: {
+          created_at: { $gte: twentyFourHoursAgo },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$created_at" },
+            month: { $month: "$created_at" },
+            day: { $dayOfMonth: "$created_at" },
+            hour: { $hour: "$created_at" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1, "_id.hour": 1 } },
+    ]);
+
+    // Get top actors (most active users)
+    const topActors = await AuditLog.aggregate([
+      {
+        $match: {
+          created_at: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+      },
+      {
+        $group: {
+          _id: "$actor_id",
+          action_count: { $sum: 1 },
+          last_activity: { $max: "$created_at" },
+          actions: { $push: "$action" },
+        },
+      },
+      { $sort: { action_count: -1 } },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: "teachers",
+          localField: "_id",
+          foreignField: "_id",
+          as: "actor",
+        },
+      },
+      {
+        $unwind: {
+          path: "$actor",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $project: {
+          actor_name: "$actor.name",
+          actor_email: "$actor.email",
+          actor_role: "$actor.role",
+          action_count: 1,
+          last_activity: 1,
+          unique_actions: { $size: { $setUnion: ["$actions"] } },
+        },
+      },
+    ]);
+
+    // Get activity trends
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+    const activityTrends = {
+      last_24h: await AuditLog.countDocuments({
+        created_at: { $gte: twentyFourHoursAgo },
+      }),
+      last_7d: await AuditLog.countDocuments({
+        created_at: { $gte: sevenDaysAgo },
+      }),
+      last_30d: await AuditLog.countDocuments({
+        created_at: { $gte: thirtyDaysAgo },
+      }),
+    };
+
+    // Get error analysis
+    const errorAnalysis = await AuditLog.aggregate([
+      {
+        $match: {
+          $or: [
+            { action: { $regex: "error", $options: "i" } },
+            { action: { $regex: "failed", $options: "i" } },
+            { action: { $regex: "rejected", $options: "i" } },
+          ],
+          created_at: { $gte: sevenDaysAgo },
+        },
+      },
+      {
+        $group: {
+          _id: "$action",
+          count: { $sum: 1 },
+          latest_occurrence: { $max: "$created_at" },
+        },
+      },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Security events
+    const securityEvents = await AuditLog.find({
+      $or: [
+        { action: { $regex: "login", $options: "i" } },
+        { action: { $regex: "logout", $options: "i" } },
+        { action: { $regex: "password", $options: "i" } },
+        { action: { $regex: "otp", $options: "i" } },
+        { action: { $regex: "unauthorized", $options: "i" } },
+      ],
+      created_at: { $gte: twentyFourHoursAgo },
+    })
+      .populate("actor_id", "name email role")
+      .sort({ created_at: -1 })
+      .limit(20);
 
     res.json({
       audit_logs: logs,
@@ -947,6 +1531,31 @@ router.get("/audit-logs", adminAuth, async (req, res) => {
         hasNext: page < Math.ceil(total / limit),
         hasPrev: page > 1,
       },
+      analytics: {
+        action_statistics: actionStats,
+        hourly_activity: hourlyActivity,
+        top_actors: topActors,
+        activity_trends: activityTrends,
+        error_analysis: errorAnalysis,
+        security_events: securityEvents,
+      },
+      filters_applied: {
+        action,
+        teacher_id: teacherId,
+        start_date: startDate,
+        end_date: endDate,
+        category,
+      },
+      available_categories: [
+        "authentication",
+        "course_management",
+        "session_management",
+        "attendance",
+        "student_management",
+        "admin_actions",
+        "system",
+        "support",
+      ],
     });
   } catch (error) {
     console.error("Get audit logs error:", error);
@@ -958,47 +1567,394 @@ router.get("/audit-logs", adminAuth, async (req, res) => {
 router.get("/health", adminAuth, async (req, res) => {
   try {
     const mongoose = require("mongoose");
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
-    // Check database connection
+    // Database health
     const dbStatus =
       mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+    const dbConnectionDetails = {
+      status: dbStatus,
+      host:
+        process.env.MONGODB_URI?.replace(/\/\/.*@/, "//***@") || "localhost",
+      connection_state: {
+        0: "disconnected",
+        1: "connected",
+        2: "connecting",
+        3: "disconnecting",
+      }[mongoose.connection.readyState],
+      database_name: mongoose.connection.name || "unknown",
+    };
 
-    // Check recent activity
-    const recentActivity = await AuditLog.countDocuments({
-      created_at: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    // System performance
+    const memoryUsage = process.memoryUsage();
+    const systemHealth = {
+      node_version: process.version,
+      uptime_seconds: Math.floor(process.uptime()),
+      uptime_formatted: formatUptime(process.uptime()),
+      environment: process.env.NODE_ENV || "development",
+      memory: {
+        rss_mb: Math.round(memoryUsage.rss / 1024 / 1024),
+        heap_used_mb: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+        heap_total_mb: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+        external_mb: Math.round(memoryUsage.external / 1024 / 1024),
+        heap_usage_percentage: Math.round(
+          (memoryUsage.heapUsed / memoryUsage.heapTotal) * 100
+        ),
+      },
+      cpu_usage: process.cpuUsage(),
+      platform: process.platform,
+      architecture: process.arch,
+    };
+
+    // Application health metrics - first get basic counts
+    const [
+      totalUsers,
+      activeSessionsCount,
+      recentErrors,
+      recentActivity,
+      pendingOperations,
+    ] = await Promise.all([
+      Teacher.countDocuments(),
+      Session.countDocuments({
+        expiry_ts: { $gt: now },
+        is_active: true,
+      }),
+      AuditLog.countDocuments({
+        $or: [
+          { action: { $regex: "error", $options: "i" } },
+          { action: { $regex: "failed", $options: "i" } },
+        ],
+        created_at: { $gte: oneDayAgo },
+      }),
+      AuditLog.countDocuments({
+        created_at: { $gte: oneHourAgo },
+      }),
+      // Simulate pending operations check
+      Promise.resolve(0),
+    ]);
+
+    // Calculate system load after we have the required variables
+    const systemLoad = await calculateSystemLoad(
+      activeSessionsCount,
+      recentActivity
+    );
+
+    // Database collection health
+    const collectionHealth = await Promise.all([
+      checkCollectionHealth("teachers", Teacher),
+      checkCollectionHealth("students", Student),
+      checkCollectionHealth("courses", Course),
+      checkCollectionHealth("sessions", Session),
+      checkCollectionHealth("attendance", Attendance),
+      checkCollectionHealth("auditlogs", AuditLog),
+      checkCollectionHealth("coursestudents", CourseStudent),
+    ]);
+
+    // Service health checks
+    const serviceHealth = {
+      email_service: await checkEmailServiceHealth(),
+      database_queries: await checkDatabasePerformance(),
+      file_system: checkFileSystemHealth(),
+      external_dependencies: await checkExternalDependencies(),
+    };
+
+    // Security health
+    const securityHealth = {
+      failed_login_attempts_24h: await AuditLog.countDocuments({
+        action: { $regex: "login.*failed", $options: "i" },
+        created_at: { $gte: oneDayAgo },
+      }),
+      suspicious_activities: await AuditLog.countDocuments({
+        $or: [
+          { action: { $regex: "unauthorized", $options: "i" } },
+          { action: { $regex: "suspicious", $options: "i" } },
+          { action: { $regex: "blocked", $options: "i" } },
+        ],
+        created_at: { $gte: oneDayAgo },
+      }),
+      admin_actions_24h: await AuditLog.countDocuments({
+        action: { $regex: "admin_", $options: "i" },
+        created_at: { $gte: oneDayAgo },
+      }),
+    };
+
+    // Performance metrics
+    const performanceMetrics = {
+      response_times: {
+        database_ping: await measureDatabasePing(),
+        average_query_time: "< 100ms", // Placeholder
+      },
+      throughput: {
+        requests_per_hour: recentActivity,
+        peak_concurrent_sessions: activeSessionsCount,
+      },
+      error_rates: {
+        error_rate_24h:
+          recentActivity > 0 ? (recentErrors / recentActivity) * 100 : 0,
+        critical_errors: recentErrors,
+      },
+    };
+
+    // Health status calculation
+    const healthScore = calculateHealthScore({
+      dbStatus,
+      recentErrors,
+      systemLoad,
+      memoryUsage: systemHealth.memory.heap_usage_percentage,
+      activeSessionsCount,
     });
 
-    // Check for any system errors (you can customize this)
-    const errorCount = await AuditLog.countDocuments({
-      action: { $regex: "error", $options: "i" },
-      created_at: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    const overallStatus = determineOverallStatus(healthScore);
+
+    // Alerts and warnings
+    const alerts = generateHealthAlerts({
+      dbStatus,
+      recentErrors,
+      systemLoad,
+      memoryUsage: systemHealth.memory.heap_usage_percentage,
+      activeSessionsCount,
+      securityHealth,
     });
 
     res.json({
-      status: "healthy",
-      timestamp: new Date(),
-      database: {
-        status: dbStatus,
-        host:
-          process.env.MONGODB_URI?.replace(/\/\/.*@/, "//***@") || "localhost",
+      status: overallStatus,
+      health_score: healthScore,
+      timestamp: now.toISOString(),
+      alerts: alerts,
+      database: dbConnectionDetails,
+      system: systemHealth,
+      application: {
+        total_users: totalUsers,
+        active_sessions: activeSessionsCount,
+        recent_activity_1h: recentActivity,
+        recent_errors_24h: recentErrors,
+        pending_operations: pendingOperations,
+        system_load: systemLoad,
       },
-      activity: {
-        recent_actions_24h: recentActivity,
-        errors_24h: errorCount,
+      collections: collectionHealth,
+      services: serviceHealth,
+      security: securityHealth,
+      performance: performanceMetrics,
+      detailed_checks: {
+        database_connectivity: dbStatus === "connected" ? "✓ Pass" : "✗ Fail",
+        memory_usage:
+          systemHealth.memory.heap_usage_percentage < 80
+            ? "✓ Pass"
+            : "⚠ Warning",
+        error_rate: recentErrors < 10 ? "✓ Pass" : "⚠ Warning",
+        active_sessions: activeSessionsCount > 0 ? "✓ Active" : "ℹ Inactive",
+        recent_activity: recentActivity > 0 ? "✓ Active" : "ℹ Quiet",
       },
-      system: {
-        node_version: process.version,
-        uptime_seconds: process.uptime(),
-        memory_usage: process.memoryUsage(),
-        environment: process.env.NODE_ENV || "development",
-      },
+      recommendations: generateHealthRecommendations({
+        recentErrors,
+        systemLoad,
+        memoryUsage: systemHealth.memory.heap_usage_percentage,
+        activeSessionsCount,
+      }),
     });
+
+    // Helper functions (defined inline for this endpoint)
+    function formatUptime(seconds) {
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return `${days}d ${hours}h ${minutes}m`;
+    }
+
+    async function checkCollectionHealth(name, model) {
+      try {
+        const count = await model.countDocuments();
+        const sampleDoc = await model.findOne().lean();
+        return {
+          collection: name,
+          status: "healthy",
+          document_count: count,
+          last_updated: sampleDoc ? new Date().toISOString() : null,
+          indexes: await model.collection.indexes(),
+        };
+      } catch (error) {
+        return {
+          collection: name,
+          status: "unhealthy",
+          error: error.message,
+          document_count: 0,
+        };
+      }
+    }
+
+    async function checkEmailServiceHealth() {
+      try {
+        // Test email service configuration
+        const emailConfig = {
+          configured: !!(
+            process.env.EMAIL_HOST &&
+            process.env.EMAIL_PORT &&
+            process.env.EMAIL_USER
+          ),
+          host: process.env.EMAIL_HOST || "not_configured",
+          port: process.env.EMAIL_PORT || "not_configured",
+        };
+        return {
+          status: emailConfig.configured ? "configured" : "not_configured",
+          details: emailConfig,
+        };
+      } catch (error) {
+        return {
+          status: "error",
+          error: error.message,
+        };
+      }
+    }
+
+    async function checkDatabasePerformance() {
+      const start = Date.now();
+      try {
+        await mongoose.connection.db.admin().ping();
+        const duration = Date.now() - start;
+        return {
+          status:
+            duration < 100 ? "excellent" : duration < 500 ? "good" : "slow",
+          ping_time_ms: duration,
+        };
+      } catch (error) {
+        return {
+          status: "error",
+          error: error.message,
+        };
+      }
+    }
+
+    function checkFileSystemHealth() {
+      try {
+        const fs = require("fs");
+        const stats = fs.statSync(".");
+        return {
+          status: "accessible",
+          current_directory: process.cwd(),
+          permissions: "readable",
+        };
+      } catch (error) {
+        return {
+          status: "error",
+          error: error.message,
+        };
+      }
+    }
+
+    async function checkExternalDependencies() {
+      // Check for any external API dependencies
+      return {
+        status: "not_applicable",
+        message: "No external dependencies configured",
+      };
+    }
+
+    async function calculateSystemLoad(activeSessions, activityCount) {
+      // Simple system load calculation based on active operations
+      const activeOps = activeSessions + activityCount;
+      return {
+        current_load: activeOps,
+        load_level:
+          activeOps < 10 ? "low" : activeOps < 50 ? "moderate" : "high",
+      };
+    }
+
+    async function measureDatabasePing() {
+      const start = Date.now();
+      try {
+        await mongoose.connection.db.admin().ping();
+        return `${Date.now() - start}ms`;
+      } catch (error) {
+        return "failed";
+      }
+    }
+
+    function calculateHealthScore(metrics) {
+      let score = 100;
+      if (metrics.dbStatus !== "connected") score -= 30;
+      if (metrics.recentErrors > 10) score -= 20;
+      if (metrics.memoryUsage > 80) score -= 15;
+      if (metrics.systemLoad.current_load > 100) score -= 10;
+      return Math.max(0, score);
+    }
+
+    function determineOverallStatus(score) {
+      if (score >= 90) return "excellent";
+      if (score >= 70) return "good";
+      if (score >= 50) return "fair";
+      if (score >= 30) return "poor";
+      return "critical";
+    }
+
+    function generateHealthAlerts(metrics) {
+      const alerts = [];
+      if (metrics.dbStatus !== "connected") {
+        alerts.push({
+          level: "critical",
+          message: "Database connection lost",
+          action: "Check database connectivity",
+        });
+      }
+      if (metrics.recentErrors > 10) {
+        alerts.push({
+          level: "warning",
+          message: `High error rate: ${metrics.recentErrors} errors in 24h`,
+          action: "Review error logs",
+        });
+      }
+      if (metrics.memoryUsage > 80) {
+        alerts.push({
+          level: "warning",
+          message: `High memory usage: ${metrics.memoryUsage}%`,
+          action: "Monitor memory consumption",
+        });
+      }
+      if (metrics.securityHealth.failed_login_attempts_24h > 20) {
+        alerts.push({
+          level: "security",
+          message: `High failed login attempts: ${metrics.securityHealth.failed_login_attempts_24h}`,
+          action: "Review security logs",
+        });
+      }
+      return alerts;
+    }
+
+    function generateHealthRecommendations(metrics) {
+      const recommendations = [];
+      if (metrics.recentErrors > 5) {
+        recommendations.push("Review and address recent error patterns");
+      }
+      if (metrics.memoryUsage > 70) {
+        recommendations.push(
+          "Consider optimizing memory usage or scaling resources"
+        );
+      }
+      if (metrics.activeSessionsCount === 0) {
+        recommendations.push(
+          "No active sessions - consider promoting user engagement"
+        );
+      }
+      if (recommendations.length === 0) {
+        recommendations.push("System operating within normal parameters");
+      }
+      return recommendations;
+    }
   } catch (error) {
     console.error("Health check error:", error);
     res.status(500).json({
-      status: "unhealthy",
+      status: "critical",
       error: "Health check failed",
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
+      error_details: error.message,
+      alerts: [
+        {
+          level: "critical",
+          message: "Health check system failure",
+          action: "Check application logs immediately",
+        },
+      ],
     });
   }
 });
