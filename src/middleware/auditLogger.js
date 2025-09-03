@@ -7,12 +7,19 @@ const auditLogger = (action) => {
 
     // Override send function to capture response
     res.send = function (data) {
-      // Log the action if teacher is authenticated and response is successful
-      if (req.teacher && res.statusCode < 400) {
+      // Log the action if user is authenticated and response is successful
+      // Support both teacher (req.teacher) and admin (req.user/req.admin) authentication
+      const user = req.teacher || req.admin || req.user;
+
+      if (user && res.statusCode < 400) {
         setImmediate(async () => {
           try {
+            // Determine actor type based on user type
+            const actorType = req.userType === "admin" ? "Admin" : "Teacher";
+
             await AuditLog.create({
-              actor_id: req.teacher._id,
+              actor_id: user._id,
+              actor_type: actorType,
               action,
               payload: {
                 method: req.method,
@@ -22,6 +29,7 @@ const auditLogger = (action) => {
                 query: req.query,
                 ip: req.ip,
                 userAgent: req.get("User-Agent"),
+                userType: req.userType || "teacher",
               },
             });
           } catch (error) {

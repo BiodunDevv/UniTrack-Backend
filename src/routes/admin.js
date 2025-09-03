@@ -7,6 +7,11 @@ const Student = require("../models/Student");
 const Session = require("../models/Session");
 const Attendance = require("../models/Attendance");
 const AuditLog = require("../models/AuditLog");
+const Admin = require("../models/Admin");
+const EmailOtp = require("../models/EmailOtp");
+const DeviceFingerprint = require("../models/DeviceFingerprint");
+const StudentShareRequest = require("../models/StudentShareRequest");
+const FAQ = require("../models/FAQ");
 const { adminAuth } = require("../middleware/auth");
 const validate = require("../middleware/validation");
 const auditLogger = require("../middleware/auditLogger");
@@ -1113,7 +1118,7 @@ router.patch(
       }
 
       // Prevent admin from demoting themselves
-      if (teacherId === req.teacher._id.toString() && role === "teacher") {
+      if (teacherId === req.user._id.toString() && role === "teacher") {
         return res
           .status(400)
           .json({ error: "Cannot demote yourself from admin role" });
@@ -2837,6 +2842,122 @@ router.get(
     } catch (error) {
       console.error("Get admin course sessions error:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+// Semester cleanup - removes all temporary data while preserving accounts and course structures
+router.delete(
+  "/semester-cleanup",
+  adminAuth,
+  auditLogger("admin_semester_cleanup"),
+  async (req, res) => {
+    try {
+      // Get statistics before cleanup for the response
+      const stats = {
+        sessions_deleted: 0,
+        attendance_records_deleted: 0,
+        audit_logs_deleted: 0,
+        email_otps_deleted: 0,
+        device_fingerprints_deleted: 0,
+        student_share_requests_deleted: 0,
+      };
+
+      // Count documents before deletion
+      stats.sessions_deleted = await Session.countDocuments({});
+      stats.attendance_records_deleted = await Attendance.countDocuments({});
+      stats.audit_logs_deleted = await AuditLog.countDocuments({});
+      stats.email_otps_deleted = await EmailOtp.countDocuments({});
+      stats.device_fingerprints_deleted =
+        await DeviceFingerprint.countDocuments({});
+      stats.student_share_requests_deleted =
+        await StudentShareRequest.countDocuments({});
+
+      console.log("Starting semester cleanup...");
+      console.log("Statistics before cleanup:", stats);
+
+      // Start cleanup process - remove all session and attendance data
+
+      // 1. Delete all attendance records
+      await Attendance.deleteMany({});
+      console.log(
+        `Deleted ${stats.attendance_records_deleted} attendance records`
+      );
+
+      // 2. Delete all sessions
+      await Session.deleteMany({});
+      console.log(`Deleted ${stats.sessions_deleted} sessions`);
+
+      // 3. Delete all audit logs (optional - keeps system clean)
+      await AuditLog.deleteMany({});
+      console.log(`Deleted ${stats.audit_logs_deleted} audit log entries`);
+
+      // 4. Delete all email OTPs (temporary verification codes)
+      await EmailOtp.deleteMany({});
+      console.log(`Deleted ${stats.email_otps_deleted} email OTP records`);
+
+      // 5. Delete all device fingerprints (security cleanup)
+      await DeviceFingerprint.deleteMany({});
+      console.log(
+        `Deleted ${stats.device_fingerprints_deleted} device fingerprints`
+      );
+
+      // 6. Delete all student share requests (temporary requests)
+      await StudentShareRequest.deleteMany({});
+      console.log(
+        `Deleted ${stats.student_share_requests_deleted} student share requests`
+      );
+
+      // Get counts of preserved data
+      const preserved = {
+        teachers: await Teacher.countDocuments({}),
+        students: await Student.countDocuments({}),
+        courses: await Course.countDocuments({}),
+        course_enrollments: await CourseStudent.countDocuments({}),
+        admins: await Admin.countDocuments({}),
+        faqs: await FAQ.countDocuments({}),
+      };
+
+      console.log("Semester cleanup completed successfully");
+      console.log("Preserved data:", preserved);
+
+      res.json({
+        message: "Semester cleanup completed successfully",
+        cleanup_summary: {
+          deleted: stats,
+          preserved: preserved,
+        },
+        description: {
+          deleted: [
+            "All attendance records",
+            "All lecture sessions",
+            "All audit logs",
+            "All email verification codes",
+            "All device fingerprints",
+            "All student share requests",
+          ],
+          preserved: [
+            "Teacher accounts",
+            "Student accounts",
+            "Admin accounts",
+            "Course information",
+            "Course enrollments (students under courses)",
+            "FAQ entries",
+          ],
+        },
+        warning:
+          "This action is irreversible. All session and attendance data has been permanently removed.",
+        next_steps:
+          "The system is now ready for a new semester. Teachers can create new sessions and students can mark attendance for the new term.",
+      });
+    } catch (error) {
+      console.error("Semester cleanup error:", error);
+      console.error("Error stack:", error.stack);
+      res.status(500).json({
+        error: "Internal server error",
+        message: "Failed to complete semester cleanup",
+        details: error.message,
+      });
     }
   }
 );

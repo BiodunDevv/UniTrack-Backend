@@ -4,7 +4,12 @@ const auditLogSchema = new mongoose.Schema(
   {
     actor_id: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Teacher",
+      required: true,
+      // Generic reference - can point to either Teacher or Admin
+    },
+    actor_type: {
+      type: String,
+      enum: ["Teacher", "Admin", "System"],
       required: true,
     },
     action: {
